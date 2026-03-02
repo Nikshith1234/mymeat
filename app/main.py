@@ -21,7 +21,7 @@ from app.models.order import Order, OrderItem  # noqa: F401
 from app.models.cart import Cart  # noqa: F401
 
 # Import routers
-from app.routers import cart, order, payment, pos, voice, rightside
+from app.routers import cart, order, payment, pos, rightside
 
 # ── Settings ──
 settings = get_settings()
@@ -85,7 +85,6 @@ app.include_router(cart.router, prefix="/api", tags=["Cart"])
 app.include_router(order.router, prefix="/api", tags=["Orders"])
 app.include_router(payment.router, prefix="/api", tags=["Payments"])
 app.include_router(pos.router, prefix="/api", tags=["POS"])
-app.include_router(voice.router, prefix="/api", tags=["Voice (Legacy)"])
 app.include_router(rightside.router, prefix="/api", tags=["Rightside"])
 
 

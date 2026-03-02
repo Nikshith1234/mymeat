@@ -31,18 +31,14 @@ class Settings(BaseSettings):
     PETPOOJA_RESTAURANT_ID: str = ""
     PETPOOJA_APP_KEY: str = ""
 
-    
-    # Twilio (Legacy)
-    TWILIO_ACCOUNT_SID: str = ""
-    TWILIO_AUTH_TOKEN: str = ""
-    TWILIO_PHONE_NUMBER: str = ""
+
 
     # Rightside AI
-    RIGHTSIDE_API_URL: str = "https://api.rightside.ai/v1"
+    RIGHTSIDE_API_KEY: str = ""
+    RIGHTSIDE_API_URL: str = "https://voice.rock8.ai"
     RIGHTSIDE_PHONE_NUMBER: str = ""
 
-    # Ultravox
-    ULTRAVOX_API_KEY: str = ""
+
 
     # CORS
     CORS_ORIGINS: str = '["*"]'
@@ -59,6 +55,7 @@ class Settings(BaseSettings):
         "env_file": ".env",
         "env_file_encoding": "utf-8",
         "case_sensitive": True,
+        "extra": "ignore"
     }
 
 

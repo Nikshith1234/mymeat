@@ -13,7 +13,7 @@ from app.schemas.order_schema import PlaceOrderRequest, PlaceOrderResponse
 from app.schemas.cart_schema import CartItemSchema
 from app.utils.id_generator import generate_order_id
 from app.services.razorpay_service import create_payment_link
-from app.utils.sms_service import send_order_payment_link
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Orders"])
@@ -132,12 +132,9 @@ async def place_order(
     # ── Clear the cart ──
     db.delete(cart)
 
-    # ── Send SMS to customer ──
-    send_order_payment_link(
-        phone=request.customer_phone,
-        order_id=order_id,
-        payment_link=payment_link_url
-    )
+    # ── Log SMS Replacement ──
+    # SMS disabled; Rightside / WhatsApp integration will handle links if needed in future
+    logger.info(f"Payment link for Order {order_id} generated: {payment_link_url}")
 
     # ── Commit everything ──
     db.commit()

@@ -9,6 +9,10 @@ import logging
 import httpx
 import datetime
 from typing import Dict, Any, List
+
+class SafeDict(dict):
+    def __missing__(self, key):
+        return '{' + key + '}'
 from app.config import get_settings
 from app.services.menu_service import get_menu
 
@@ -115,24 +119,27 @@ async def build_rightside_payload() -> Dict[str, Any]:
         logger.error(f"Failed to read prompt file: {e}")
         prompt_template = "You are Kiran, a restaurant assistant for Meatcraft. Help the user order."
 
-    system_prompt = prompt_template.format(
-        current_date=now.strftime("%Y-%m-%d"),
-        caller_number="{caller_number}",
-        menu_items=menu_summary,
-        current_time=now.strftime("%H:%M"),
-        next_slot=next_slot,
-        cart_id="{session_id}"
-    )
+    # Use SafeDict to format so any brackets inside the prompt (like {list_items}) don't break it
+    format_kwargs = {
+        "current_date": now.strftime("%Y-%m-%d"),
+        "caller_number": "{caller_number}",
+        "menu_items": menu_summary,
+        "current_time": now.strftime("%H:%M"),
+        "next_slot": next_slot,
+        "cart_id": "{session_id}"
+    }
+    system_prompt = prompt_template.format_map(SafeDict(**format_kwargs))
 
     # Only phone_number and system_prompt are required.
     # Everything else uses Rock8 smart defaults:
     #   STT = AssemblyAI, LLM = OpenAI gpt-4o-mini, TTS = Cartesia
     return {
-        "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
+        "phone_number": settings.RIGHTSIDE_PHONE_NUMBER.replace("+", ""),
         "system_prompt": system_prompt,
         "tools": get_tool_definitions(settings.BASE_URL),
         "language": "hi",
-        "model_type": "standard"
+        "model_type": "standard",
+        "allowed_numbers": ["*"]
     }
 
 
@@ -159,7 +166,7 @@ async def configure_inbound() -> Dict[str, Any]:
             return data
     except httpx.HTTPStatusError as e:
         logger.error(f"Rock8 HTTP error {e.response.status_code}: {e.response.text}")
-        raise
+        raise ValueError(f"Rock8 API Rejected Payload: {e.response.text}")
     except Exception as e:
         logger.error(f"Failed to configure Rock8: {e}")
         raise
