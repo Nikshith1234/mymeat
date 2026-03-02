@@ -1,5 +1,5 @@
 """
-Menu service — fetches and caches menu from Koala API.
+Menu service — fetches and caches menu from local file.
 Validates items and variations before adding to cart.
 """
 import time
@@ -63,7 +63,7 @@ async def get_menu() -> Dict[str, Any]:
         _menu_cache_timestamp = current_time
         return _menu_cache
     except httpx.HTTPStatusError as e:
-        logger.error(f"Koala API HTTP error: {e.response.status_code} - {e.response.text}")
+        logger.error(f"Menu API HTTP error: {e.response.status_code} - {e.response.text}")
         # Return stale cache if available
         if _menu_cache is not None:
             logger.warning("Returning stale menu cache due to API error")
@@ -80,7 +80,7 @@ async def get_menu() -> Dict[str, Any]:
 def _extract_items_from_menu(menu_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Extract a flat list of items from the nested menu structure.
-    Handles common Koala API menu formats.
+    Handles common menu data formats.
     """
     items = []
 

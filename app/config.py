@@ -31,10 +31,6 @@ class Settings(BaseSettings):
     PETPOOJA_RESTAURANT_ID: str = ""
     PETPOOJA_APP_KEY: str = ""
 
-    # Koala Menu API
-    KOALA_API_URL: str = "https://api.koala.menu/v1"
-    KOALA_API_KEY: str = ""
-    KOALA_RESTAURANT_ID: str = ""
     
     # Twilio (Legacy)
     TWILIO_ACCOUNT_SID: str = ""
@@ -42,8 +38,7 @@ class Settings(BaseSettings):
     TWILIO_PHONE_NUMBER: str = ""
 
     # Rightside AI
-    RIGHTSIDE_API_KEY: str = ""
-    RIGHTSIDE_API_URL: str = "https://api.rightside.ai/inbound/configure"
+    RIGHTSIDE_API_URL: str = "https://api.rightside.ai/v1"
     RIGHTSIDE_PHONE_NUMBER: str = ""
 
     # Ultravox

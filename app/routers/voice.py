@@ -14,12 +14,12 @@ settings = get_settings()
 # No longer defined as a hardcoded constant, read from file instead.
 
 def get_ultravox_tools(base_url: str):
-    """Define tools for Ultravox agent based on Koala/Meatcraft specs."""
+    """Define tools for Ultravox agent."""
     return [
         {
             "temporary_tool": {
                 "model_tool_definition": {
-                    "name": "koala_add_to_cart",
+                    "name": "add_to_cart",
                     "description": "Add an item to the shopping cart. Ask for variation if available in menu.",
                     "parameters": {
                         "type": "object",
@@ -41,7 +41,7 @@ def get_ultravox_tools(base_url: str):
         {
             "temporary_tool": {
                 "model_tool_definition": {
-                    "name": "koala_calculate_total",
+                    "name": "calculate_total",
                     "description": "Get all items currently in the cart and the total amount.",
                     "parameters": {
                         "type": "object",
@@ -60,7 +60,7 @@ def get_ultravox_tools(base_url: str):
         {
             "temporary_tool": {
                 "model_tool_definition": {
-                    "name": "koala_remove_from_cart",
+                    "name": "remove_from_cart",
                     "description": "Remove an item from the shopping cart.",
                     "parameters": {
                         "type": "object",
@@ -81,7 +81,7 @@ def get_ultravox_tools(base_url: str):
         {
             "temporary_tool": {
                 "model_tool_definition": {
-                    "name": "koala_place_order",
+                    "name": "place_order",
                     "description": "Place the final order from the cart items.",
                     "parameters": {
                         "type": "object",
