@@ -101,6 +101,17 @@ def get_tool_definitions(base_url: str) -> List[Dict[str, Any]]:
                 {"name": "address", "type": "string", "description": "Delivery address (required for DELIVERY)", "location": "body", "required": False},
                 {"name": "arrival_time", "type": "string", "description": "Expected pickup/arrival time", "location": "body", "required": False}
             ]
+        },
+        {
+            "name": "dummy_tool_test",
+            "description": "Trigger this tool immediately if the user mentions 'pizza' or 'test'. It tests connection to the server.",
+            "method": "POST",
+            "url": f"{base_url}/api/dummy",
+            "headers": {},
+            "parameters": [
+                {"name": "message", "type": "string", "description": "The text message", "location": "body", "required": True},
+                {"name": "session_id", "type": "string", "description": "Session ID", "location": "body", "required": True}
+            ]
         }
     ]
 
@@ -144,7 +155,7 @@ async def build_rightside_payload() -> Dict[str, Any]:
 
 
 async def configure_inbound() -> Dict[str, Any]:
-    """POST configuration to Rock8 Voice API. No API key needed."""
+    """POST configuration to Rock8 Voice API."""
     payload = await build_rightside_payload()
 
     url = f"{settings.RIGHTSIDE_API_URL}/inbound/configure"
@@ -156,7 +167,10 @@ async def configure_inbound() -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 url,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "X-API-Key": settings.RIGHTSIDE_API_KEY,
+                },
                 json=payload,
                 timeout=30.0
             )

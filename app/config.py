@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     RIGHTSIDE_API_KEY: str = ""
     RIGHTSIDE_API_URL: str = "https://voice.rock8.ai"
     RIGHTSIDE_PHONE_NUMBER: str = ""
-
-
+    SIP_TRUNK_ID: str = ""
+    DISPATCH_RULE_ID: str = ""
 
     # CORS
     CORS_ORIGINS: str = '["*"]'

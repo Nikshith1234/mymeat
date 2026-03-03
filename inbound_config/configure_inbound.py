@@ -1,95 +1,36 @@
 import requests
 import json
+import sys
+import asyncio
+from pathlib import Path
+
+# Add project root to path so we can import backend packages
+root_dir = str(Path(__file__).parent.parent)
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
+
+from app.config import get_settings
+from app.services.rightside_service import build_rightside_payload
+
+settings = get_settings()
 
 # API Endpoint
-url = "https://voice.rock8.ai/inbound/configure"
+url = f"{settings.RIGHTSIDE_API_URL}/inbound/configure"
 
 HEADERS = {
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "X-API-Key": settings.RIGHTSIDE_API_KEY,
 }
 
-# The System Prompt
-system_prompt = """
-Persona: Priya, Female, Order-taking agent for MEAT CRAFT.
-Tone: Efficient, clear, helpful, direct. Hindi/Hinglish focused.
-
-Core Rules:
-1. Primary language: Hindi/Hinglish. Item names in English.
-2. Currency: Verbalized in English (e.g., "one hundred and forty Rupees").
-3. Weight Terms: "adha kilo" -> 500g, "dhai sau gram" -> 250g. Prompt for standard weights if unclear.
-4. NEVER collect payment or addresses over the phone (use WhatsApp handoff).
-5. Call Persistence: Do not end until order is placed or user cancels.
-6. Cart Management: 'koala_add_to_cart' overwrites the cart. Always send the full list of items.
-
-Call Flow:
-- Intro: "MEAT CRAFT mein call karne ke liye dhanyavaad..."
-- Category/Item Selection: List categories/items from menu.
-- Confirmation: Verify full order items and quantities.
-- Fulfillment: Ask "Delivery" or "Pickup from Ramesh Nagar". 
-- Handoff: Trigger 'koala_place_order' then inform user about WhatsApp message.
-"""
-
-# IMPORTANT: Ensure the phone number does not conflict with existing inbound SIP Trunks
-payload = {
-    "phone_number": "+919004868097", # Replace with your target inbound number
-    "system_prompt": system_prompt,
-    "tools": [
-        {
-            "name": "koala_add_to_cart",
-            "description": "Updates the shopping cart. Overwrites previous cart state.",
-            "method": "POST",
-            "url": "https://your-api-endpoint.com/cart/add",
-            "headers": {
-                "Content-Type": "application/json"
-            },
-            "parameters": [
-                {
-                    "name": "cart_id",
-                    "description": "The unique ID for the session cart",
-                    "type": "string",
-                    "location": "body"
-                },
-                {
-                    "name": "items",
-                    "description": "List of objects containing item_name and quantity",
-                    "type": "array",
-                    "location": "body"
-                }
-            ]
-        }
-    ],
-    "voice": "female",
-    "language": "hi-IN",
-    "model_type": "standard",
-    "stt_config": {
-        "provider": "deepgram",
-        "config": {
-            "model": "nova-2",
-            "language": "hi"
-        }
-    },
-    "llm_config": {
-        "provider": "openai",
-        "config": {
-            "model": "gpt-4o"
-        }
-    },
-    "tts_config": {
-        "provider": "cartesia",
-        "config": {
-            "model": "sonic-english",
-            "voice_id": "your-voice-id"
-        }
-    },
-    "vad_config": {
-        "min_silence_duration": 0.6,
-        "activation_threshold": 0.4,
-        "min_speech_duration": 0.3
-    }
-}
 
 def configure_inbound():
-    print(f"Configuring inbound number: {payload.get('phone_number')}")
+    print(f"Configuring inbound number: {settings.RIGHTSIDE_PHONE_NUMBER}")
+    print(f"Using API URL: {url}")
+    print(f"Using Base URL for tools: {settings.BASE_URL}")
+
+    # Build the full payload dynamically (prompt + menu + tools)
+    payload = asyncio.run(build_rightside_payload())
+
     try:
         response = requests.post(url, json=payload, headers=HEADERS)
         if not response.ok:
@@ -99,13 +40,23 @@ def configure_inbound():
             except Exception:
                 print("Raw response:", response.text)
         else:
+            data = response.json()
             print("Agent Configured Successfully!")
-            print(json.dumps(response.json(), indent=2))
-            
-            # NOTE: Remember to save the sip_trunk_id and dispatch_rule_id from the response
-            # You will need them for updating or deleting the configuration later.
+            print(json.dumps(data, indent=2))
+
+            # Save the IDs back for future use
+            sip_trunk_id = data.get("sip_trunk_id", "")
+            dispatch_rule_id = data.get("dispatch_rule_id", "")
+
+            if sip_trunk_id and dispatch_rule_id:
+                print("\n--- Save these to your .env ---")
+                print(f"SIP_TRUNK_ID={sip_trunk_id}")
+                print(f"DISPATCH_RULE_ID={dispatch_rule_id}")
+                print("--------------------------------\n")
+
     except requests.exceptions.RequestException as e:
         print(f"Request failed: {e}")
+
 
 if __name__ == "__main__":
     configure_inbound()
