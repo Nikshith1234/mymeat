@@ -43,28 +43,36 @@ def _update_env_value(key: str, value: str) -> None:
 
 
 async def get_formatted_menu_summary() -> str:
-    """Fetch menu and format it as a readable string for the system prompt."""
+    """
+    Compact menu for the system prompt — grouped by category, names only.
+    Prices and stock are validated by the backend on add_to_cart.
+    """
     try:
         menu_data = await get_menu()
-        summary = []
         categories = menu_data.get("categories", [])
         items = menu_data.get("items", [])
 
-        for cat in categories:
-            cat_name = cat.get("categoryname")
-            cat_id = cat.get("categoryid")
-            cat_items = [
-                i.get("itemname")
-                for i in items
-                if i.get("item_categoryid") == cat_id and i.get("in_stock") == "2"
-            ]
-            if cat_items:
-                summary.append(f"- {cat_name}: {', '.join(cat_items)}")
+        cat_map = {c.get("categoryid"): c.get("categoryname") for c in categories}
+        groups: dict = {}
 
-        return "\n".join(summary)
+        for item in items:
+            if item.get("active") != "1":
+                continue
+            if item.get("in_stock") != "2":
+                continue
+            cat_id = item.get("item_categoryid", "")
+            cat_name = cat_map.get(cat_id, "Other")
+            name = item.get("itemname", "")
+            if name:
+                groups.setdefault(cat_name, []).append(name)
+
+        return "\n".join(
+            f"{cat}: {', '.join(names)}"
+            for cat, names in groups.items()
+        )
     except Exception as e:
         logger.error(f"Failed to format menu: {e}")
-        return "Menu items currently unavailable."
+        return "Menu unavailable."
 
 
 def get_tool_definitions(base_url: str) -> List[Dict[str, Any]]:
@@ -159,7 +167,40 @@ async def build_rightside_payload() -> Dict[str, Any]:
         "tools": get_tool_definitions(settings.BASE_URL),
         "language": "hi-IN",
         "model_type": "standard",
-        "allowed_numbers": ["*"]
+        "allowed_numbers": ["*"],
+        # ── STT: Deepgram Nova-2 tuned for Hindi ──
+        "stt_config": {
+            "provider": "deepgram",
+            "config": {
+                "model": "nova-2",
+                "language": "hi",
+                "smart_format": True,
+                "punctuate": True,
+                "interim_results": True,
+                "endpointing": 300,
+            }
+        },
+        # ── LLM: gpt-4o-mini — fast, cheap, good enough for ordering ──
+        "llm_config": {
+            "provider": "openai",
+            "config": {
+                "model": "gpt-4o-mini"
+            }
+        },
+        # ── TTS: Cartesia sonic-multilingual (handles Hindi well) ──
+        "tts_config": {
+            "provider": "cartesia",
+            "config": {
+                "model": "sonic-multilingual",
+                "language": "hi"
+            }
+        },
+        # ── VAD: Tighter settings so it cuts in faster ──
+        "vad_config": {
+            "min_silence_duration": 0.4,
+            "activation_threshold": 0.3,
+            "min_speech_duration": 0.2
+        }
     }
 
 
