@@ -5,7 +5,6 @@ All values are loaded from environment variables or .env file.
 import json
 from typing import List
 from pydantic_settings import BaseSettings
-from functools import lru_cache
 
 
 class Settings(BaseSettings):
@@ -59,7 +58,6 @@ class Settings(BaseSettings):
     }
 
 
-@lru_cache()
 def get_settings() -> Settings:
-    """Cached settings instance — created once and reused."""
+    """Settings instance — reads from .env each call (no caching so .env changes take effect on restart)."""
     return Settings()

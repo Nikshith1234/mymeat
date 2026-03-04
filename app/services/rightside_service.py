@@ -5,10 +5,13 @@ https://voice.rock8.ai/inbound/configure
 Only phone_number and system_prompt are required.
 Tools, voice, language, and provider configs are optional (smart defaults).
 """
+import os
+import re
 import logging
 import httpx
 import datetime
 from typing import Dict, Any, List
+from pathlib import Path
 
 class SafeDict(dict):
     def __missing__(self, key):
@@ -17,7 +20,26 @@ from app.config import get_settings
 from app.services.menu_service import get_menu
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
+
+# NOTE: Do NOT cache settings at module level — always call get_settings() inside
+# functions so that .env changes take effect after a server restart.
+
+
+def _update_env_value(key: str, value: str) -> None:
+    """Write/update a key=value line in the .env file."""
+    env_path = Path(".env")
+    if not env_path.exists():
+        logger.warning(".env file not found, cannot persist %s", key)
+        return
+    content = env_path.read_text(encoding="utf-8")
+    pattern = rf"^{re.escape(key)}=.*$"
+    new_line = f"{key}={value}"
+    if re.search(pattern, content, flags=re.MULTILINE):
+        content = re.sub(pattern, new_line, content, flags=re.MULTILINE)
+    else:
+        content = content.rstrip("\n") + f"\n{new_line}\n"
+    env_path.write_text(content, encoding="utf-8")
+    logger.info("Updated .env: %s", new_line)
 
 
 async def get_formatted_menu_summary() -> str:
@@ -107,6 +129,7 @@ def get_tool_definitions(base_url: str) -> List[Dict[str, Any]]:
 
 async def build_rightside_payload() -> Dict[str, Any]:
     """Build the full configuration payload for Rock8 Voice API."""
+    settings = get_settings()
     now = datetime.datetime.now()
     next_slot = (now + datetime.timedelta(minutes=30)).strftime("%H:%M")
     menu_summary = await get_formatted_menu_summary()
@@ -130,9 +153,6 @@ async def build_rightside_payload() -> Dict[str, Any]:
     }
     system_prompt = prompt_template.format_map(SafeDict(**format_kwargs))
 
-    # Only phone_number and system_prompt are required.
-    # Everything else uses Rock8 smart defaults:
-    #   STT = AssemblyAI, LLM = OpenAI gpt-4o-mini, TTS = Cartesia
     return {
         "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
         "system_prompt": system_prompt,
@@ -145,6 +165,7 @@ async def build_rightside_payload() -> Dict[str, Any]:
 
 async def configure_inbound() -> Dict[str, Any]:
     """POST configuration to Rock8 Voice API."""
+    settings = get_settings()
     payload = await build_rightside_payload()
 
     url = f"{settings.RIGHTSIDE_API_URL}/inbound/configure"
@@ -166,53 +187,34 @@ async def configure_inbound() -> Dict[str, Any]:
             resp.raise_for_status()
             data = resp.json()
             logger.info(f"Rock8 configured! Response: {data}")
+
+            # Persist the returned IDs to .env for future update/delete operations
+            if data.get("sip_trunk_id"):
+                _update_env_value("SIP_TRUNK_ID", data["sip_trunk_id"])
+            if data.get("dispatch_rule_id"):
+                _update_env_value("DISPATCH_RULE_ID", data["dispatch_rule_id"])
+
             return data
     except httpx.HTTPStatusError as e:
         logger.error(f"Rock8 HTTP error {e.response.status_code}: {e.response.text}")
         raise ValueError(f"Rock8 API Rejected Payload: {e.response.text}")
-        logger.error(f"Failed to configure Rock8: {e}")
-        raise
 
 async def update_inbound() -> Dict[str, Any]:
     """PUT updated configuration to Rock8 Voice API."""
+    settings = get_settings()
     if not settings.SIP_TRUNK_ID or not settings.DISPATCH_RULE_ID:
         raise ValueError("SIP_TRUNK_ID or DISPATCH_RULE_ID is not configured in environment.")
 
     base_payload = await build_rightside_payload()
-    
+    logger.info(f"Updating with SIP_TRUNK_ID={settings.SIP_TRUNK_ID!r}, DISPATCH_RULE_ID={settings.DISPATCH_RULE_ID!r}")
+
     payload = {
         "sip_trunk_id": settings.SIP_TRUNK_ID,
         "dispatch_rule_id": settings.DISPATCH_RULE_ID,
         "system_prompt": base_payload["system_prompt"],
         "tools": base_payload["tools"],
-        "voice": "female",
-        "language": "hi-IN",
+        "language": "hi",
         "model_type": "standard",
-        "stt_config": {
-            "provider": "deepgram",
-            "config": {
-                "model": "nova-2",
-                "language": "hi"
-            }
-        },
-        "llm_config": {
-            "provider": "openai",
-            "config": {
-                "model": "gpt-4o"
-            }
-        },
-        "tts_config": {
-            "provider": "cartesia",
-            "config": {
-                "model": "sonic-english",
-                "voice_id": "your-voice-id"
-            }
-        },
-        "vad_config": {
-            "min_silence_duration": 0.6,
-            "activation_threshold": 0.4,
-            "min_speech_duration": 0.3
-        }
     }
 
     url = f"{settings.RIGHTSIDE_API_URL}/inbound/update"
@@ -232,6 +234,13 @@ async def update_inbound() -> Dict[str, Any]:
             resp.raise_for_status()
             data = resp.json()
             logger.info(f"Rock8 updated! Response: {data}")
+
+            # Persist the new dispatch_rule_id back to .env so future updates use it
+            new_rule_id = data.get("dispatch_rule_id")
+            if new_rule_id:
+                _update_env_value("DISPATCH_RULE_ID", new_rule_id)
+                logger.info(f"Saved new dispatch_rule_id to .env: {new_rule_id}")
+
             return data
     except httpx.HTTPStatusError as e:
         logger.error(f"Rock8 HTTP error {e.response.status_code}: {e.response.text}")
@@ -242,6 +251,7 @@ async def update_inbound() -> Dict[str, Any]:
 
 async def delete_inbound() -> Dict[str, Any]:
     """DELETE configuration from Rock8 Voice API."""
+    settings = get_settings()
     if not settings.SIP_TRUNK_ID or not settings.DISPATCH_RULE_ID:
         raise ValueError("SIP_TRUNK_ID or DISPATCH_RULE_ID is not configured in environment.")
 
