@@ -11,7 +11,7 @@ import httpx
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
+# NOTE: Do NOT cache settings at module level here.
 
 # ── In-memory menu cache ──────────────────────────────────
 _menu_cache: Optional[Dict[str, Any]] = None
@@ -108,73 +108,68 @@ async def validate_item(
 ) -> Dict[str, Any]:
     """
     Validate an item exists in the menu and return its price info.
-
-    Args:
-        item_name: Name of the item to validate.
-        variation: Optional variation (e.g., "Half", "Full").
-
-    Returns:
-        Dict with keys: item_name, variation, price
-
-    Raises:
-        ValueError: If item or variation is not found.
+    Uses 'itemname', 'variationname', 'price' fields from menu.txt.
     """
     menu_data = await get_menu()
-    items = _extract_items_from_menu(menu_data)
+    items = menu_data.get("items", [])
 
-    # Find matching item (case-insensitive)
+    # Find matching item (case-insensitive, field: "itemname")
     matched_item = None
     for item in items:
-        name = item.get("name", item.get("item_name", ""))
+        name = item.get("itemname", "")
         if name.lower() == item_name.lower():
             matched_item = item
             break
 
     if matched_item is None:
-        available = [
-            item.get("name", item.get("item_name", ""))
-            for item in items
-        ]
+        # Fuzzy fallback: check if item_name is a substring
+        for item in items:
+            name = item.get("itemname", "")
+            if item_name.lower() in name.lower() or name.lower() in item_name.lower():
+                matched_item = item
+                logger.info(f"Fuzzy matched '{item_name}' -> '{name}'")
+                break
+
+    if matched_item is None:
+        available = [item.get("itemname", "") for item in items[:10]]
         raise ValueError(
             f"Item '{item_name}' not found in menu. "
-            f"Available items: {', '.join(available[:10])}"
+            f"Some available: {', '.join(available)}"
         )
 
-    # Determine price
-    variations = matched_item.get("variations", matched_item.get("options", []))
+    # Determine price — menu.txt uses "variations" list with "variationname" and "price"
+    variations = matched_item.get("variations", [])
 
     if variation and variations:
-        # Find matching variation
         matched_variation = None
         for var in variations:
-            var_name = var.get("name", var.get("variation_name", ""))
+            var_name = var.get("variationname", var.get("name", ""))
             if var_name.lower() == variation.lower():
                 matched_variation = var
                 break
 
         if matched_variation is None:
-            available_vars = [
-                v.get("name", v.get("variation_name", ""))
-                for v in variations
-            ]
+            available_vars = [v.get("variationname", v.get("name", "")) for v in variations]
             raise ValueError(
                 f"Variation '{variation}' not found for '{item_name}'. "
-                f"Available variations: {', '.join(available_vars)}"
+                f"Available: {', '.join(available_vars)}"
             )
 
         price = float(matched_variation.get("price", 0))
+        variation = matched_variation.get("variationname", variation)
     elif variations and not variation:
-        # Default to first variation if no variation specified
+        # Default to first variation
         first_var = variations[0]
-        variation = first_var.get("name", first_var.get("variation_name", "Default"))
+        variation = first_var.get("variationname", first_var.get("name", "Default"))
         price = float(first_var.get("price", 0))
         logger.info(f"No variation specified for '{item_name}', defaulting to '{variation}'")
     else:
         # No variations — use item price directly
         price = float(matched_item.get("price", matched_item.get("item_price", 0)))
+        variation = None
 
     return {
-        "item_name": matched_item.get("name", matched_item.get("item_name", item_name)),
+        "item_name": matched_item.get("itemname", item_name),
         "variation": variation,
         "price": price,
     }

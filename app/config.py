@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Meatcraft Voice Ordering"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
-    BASE_URL: str = "http://localhost:8000"
+    BASE_URL: str = "https://nonsciatic-fulsomely-rodney.ngrok-free.dev"
 
     # Database
     DATABASE_URL: str = "sqlite:///./meatcraft.db"

@@ -165,7 +165,7 @@ async def build_rightside_payload() -> Dict[str, Any]:
         "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
         "system_prompt": system_prompt,
         "tools": get_tool_definitions(settings.BASE_URL),
-        "language": "hi",
+        "language": "hi-IN",
         "model_type": "standard",
         "allowed_numbers": ["*"],
         # ── STT: Deepgram Nova-2 tuned for Hindi ──
@@ -254,7 +254,7 @@ async def update_inbound() -> Dict[str, Any]:
         "dispatch_rule_id": settings.DISPATCH_RULE_ID,
         "system_prompt": base_payload["system_prompt"],
         "tools": base_payload["tools"],
-        "language": "hi",
+        "language": "hi-IN",
         "model_type": "standard",
     }
 
