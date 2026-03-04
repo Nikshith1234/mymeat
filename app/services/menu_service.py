@@ -108,12 +108,12 @@ async def validate_item(
 ) -> Dict[str, Any]:
     """
     Validate an item exists in the menu and return its price info.
-    Uses 'itemname', 'variationname', 'price' fields from menu.txt.
+    Menu fields: itemname, variation (array), variation[].name, variation[].price
     """
     menu_data = await get_menu()
     items = menu_data.get("items", [])
 
-    # Find matching item (case-insensitive, field: "itemname")
+    # ── Step 1: Exact item name match (case-insensitive) ──────────────────
     matched_item = None
     for item in items:
         name = item.get("itemname", "")
@@ -121,8 +121,8 @@ async def validate_item(
             matched_item = item
             break
 
+    # ── Step 2: Fuzzy fallback ─────────────────────────────────────────────
     if matched_item is None:
-        # Fuzzy fallback: check if item_name is a substring
         for item in items:
             name = item.get("itemname", "")
             if item_name.lower() in name.lower() or name.lower() in item_name.lower():
@@ -137,35 +137,53 @@ async def validate_item(
             f"Some available: {', '.join(available)}"
         )
 
-    # Determine price — menu.txt uses "variations" list with "variationname" and "price"
-    variations = matched_item.get("variations", [])
+    # ── Step 3: Variation matching ─────────────────────────────────────────
+    # Menu uses field "variation" (array), each entry has "name" and "price"
+    variations = matched_item.get("variation", [])
+
+    def _normalize(s: str) -> str:
+        """Strip spaces and lowercase for fuzzy comparison: '1 Kg' -> '1kg'"""
+        return s.replace(" ", "").lower()
 
     if variation and variations:
         matched_variation = None
+
+        # Exact match first
         for var in variations:
-            var_name = var.get("variationname", var.get("name", ""))
+            var_name = var.get("name", "")
             if var_name.lower() == variation.lower():
                 matched_variation = var
                 break
 
+        # Fuzzy match — normalize spaces/caps (e.g. "1kg" matches "1 Kg")
         if matched_variation is None:
-            available_vars = [v.get("variationname", v.get("name", "")) for v in variations]
+            for var in variations:
+                var_name = var.get("name", "")
+                if _normalize(var_name) == _normalize(variation):
+                    matched_variation = var
+                    logger.info(f"Fuzzy variation matched '{variation}' -> '{var_name}'")
+                    break
+
+        if matched_variation is None:
+            available_vars = [v.get("name", "") for v in variations]
             raise ValueError(
                 f"Variation '{variation}' not found for '{item_name}'. "
                 f"Available: {', '.join(available_vars)}"
             )
 
         price = float(matched_variation.get("price", 0))
-        variation = matched_variation.get("variationname", variation)
+        variation = matched_variation.get("name", variation)
+
     elif variations and not variation:
-        # Default to first variation
+        # Default to first variation when agent didn't specify one
         first_var = variations[0]
-        variation = first_var.get("variationname", first_var.get("name", "Default"))
+        variation = first_var.get("name", "Default")
         price = float(first_var.get("price", 0))
-        logger.info(f"No variation specified for '{item_name}', defaulting to '{variation}'")
+        logger.info(f"No variation for '{item_name}', defaulting to '{variation}'")
+
     else:
-        # No variations — use item price directly
-        price = float(matched_item.get("price", matched_item.get("item_price", 0)))
+        # No variations — use item base price
+        price = float(matched_item.get("price", 0))
         variation = None
 
     return {
