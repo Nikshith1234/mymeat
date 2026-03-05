@@ -56,3 +56,21 @@ class OrderStatusResponse(BaseModel):
     pos_status: str
     total_amount: float
     items: List[CartItemSchema] = []
+
+
+class OrderSchema(BaseModel):
+    """Full representation of an order for a list response."""
+    order_id: str
+    customer_name: str
+    customer_phone: str
+    address: Optional[str] = None
+    order_type: str
+    payment_status: str
+    pos_status: str
+    total_amount: float
+    status: str = "pending"
+    items: List[CartItemSchema] = []
+    timestamp: Optional[str] = None
+    
+    class Config:
+        orm_mode = True

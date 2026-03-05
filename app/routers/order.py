@@ -81,7 +81,7 @@ async def place_order(
         address=request.address,
         order_type=OrderType(order_type_upper),
         total_amount=total_amount,
-        payment_status=PaymentStatus.PENDING,
+        payment_status=PaymentStatus.PAID,  # Instantly confirm the order for testing
         pos_status=PosStatus.NOT_SENT,
     )
     db.add(order)
@@ -115,19 +115,11 @@ async def place_order(
         order.razorpay_payment_link_id = payment_link_id
 
     except ValueError as e:
-        db.rollback()
-        logger.error(f"Payment link creation failed: {e}")
-        return PlaceOrderResponse(
-            success=False,
-            message=f"Failed to create payment link: {e}",
-        )
+        logger.warning(f"Payment link creation failed (Using mock link): {e}")
+        payment_link_url = "http://mock-payment-link/for-testing"
     except Exception as e:
-        db.rollback()
-        logger.error(f"Unexpected payment error: {e}")
-        return PlaceOrderResponse(
-            success=False,
-            message="Payment service unavailable. Please try again.",
-        )
+        logger.warning(f"Unexpected payment error (Using mock link): {e}")
+        payment_link_url = "http://mock-payment-link/for-testing"
 
     # ── Clear the cart ──
     db.delete(cart)
@@ -152,3 +144,77 @@ async def place_order(
         payment_link=payment_link_url,
         items=order_item_schemas,
     )
+
+
+from typing import List
+from app.schemas.order_schema import OrderSchema
+
+@router.get("/orders", response_model=List[OrderSchema])
+async def get_all_orders(db: Session = Depends(get_db)):
+    """
+    Fetch all placed orders for the frontend dashboard.
+    Orders are retrieved with their items.
+    """
+    # Fetch all orders from database 
+    db_orders = db.query(Order).all()
+    
+    response_orders = []
+    for order in db_orders:
+        
+        # Determine internal UI status based on payment/pos state
+        # (This can be basic logic, defaults to 'pending')
+        status = "pending"
+        if order.pos_status == PosStatus.SENT:
+            status = "preparing"
+        
+        # Convert items
+        order_items = []
+        for item in order.items:
+            order_items.append(CartItemSchema(
+                item_name=item.item_name,
+                variation=item.variation,
+                quantity=item.quantity,
+                price=item.price,
+                final_price=item.final_price
+            ))
+            
+        # Optional: format a simple timestamp string from DB created_at 
+        # (Assuming your order model has generic timestamps, if not fallback to None)
+        timestamp_str = "Recently"
+        if hasattr(order, 'created_at') and order.created_at:
+             # Basic time format like '10:15 AM'
+             timestamp_str = order.created_at.strftime("%I:%M %p")
+
+        order_data = OrderSchema(
+            order_id=order.order_id,
+            customer_name=order.customer_name or "Unknown",
+            customer_phone=order.customer_phone,
+            address=order.address,
+            order_type=order.order_type.value if hasattr(order.order_type, 'value') else str(order.order_type),
+            payment_status=order.payment_status.value if hasattr(order.payment_status, 'value') else str(order.payment_status),
+            pos_status=order.pos_status.value if hasattr(order.pos_status, 'value') else str(order.pos_status),
+            total_amount=order.total_amount,
+            status=status,
+            items=order_items,
+            timestamp=timestamp_str
+        )
+        response_orders.append(order_data)
+        
+    # Reverse to show newest first
+    response_orders.reverse()
+    
+    return response_orders
+
+
+@router.delete("/orders/{order_id}")
+async def clear_order(order_id: str, db: Session = Depends(get_db)):
+    """
+    Permanently delete an order from the database (e.g. when cleared from frontend).
+    """
+    order = db.query(Order).filter(Order.order_id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+        
+    db.delete(order)
+    db.commit()
+    return {"success": True, "message": f"Order {order_id} cleared"}

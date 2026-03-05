@@ -63,6 +63,13 @@ async def get_formatted_menu_summary() -> str:
             cat_id = item.get("item_categoryid", "")
             cat_name = cat_map.get(cat_id, "Other")
             name = item.get("itemname", "")
+            
+            variations = item.get("variation", [])
+            if variations:
+                var_names = [v.get("name", "") for v in variations if v.get("name")]
+                if var_names:
+                    name = f"{name} (Sizes: {', '.join(var_names)})"
+
             if name:
                 groups.setdefault(cat_name, []).append(name)
 
@@ -167,7 +174,7 @@ async def build_rightside_payload() -> Dict[str, Any]:
         "tools": get_tool_definitions(settings.BASE_URL),
         "language": "hi-IN",
         "model_type": "standard",
-        "allowed_numbers": ["*"],
+        "AllowedNumbers": ["*"],
         # ── STT: Deepgram Nova-2 tuned for Hindi ──
         "stt_config": {
             "provider": "deepgram",
@@ -252,10 +259,15 @@ async def update_inbound() -> Dict[str, Any]:
     payload = {
         "sip_trunk_id": settings.SIP_TRUNK_ID,
         "dispatch_rule_id": settings.DISPATCH_RULE_ID,
+        "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
         "system_prompt": base_payload["system_prompt"],
         "tools": base_payload["tools"],
-        "language": "hi-IN",
-        "model_type": "standard",
+        "language": base_payload.get("language", "hi-IN"),
+        "model_type": base_payload.get("model_type", "standard"),
+        "stt_config": base_payload.get("stt_config"),
+        "llm_config": base_payload.get("llm_config"),
+        "tts_config": base_payload.get("tts_config"),
+        "vad_config": base_payload.get("vad_config"),
     }
 
     url = f"{settings.RIGHTSIDE_API_URL}/inbound/update"
