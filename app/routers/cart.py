@@ -7,6 +7,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import get_db
 from app.models.cart import Cart
@@ -101,9 +102,10 @@ async def add_to_cart(
         current_items.append(new_item)
         logger.info(f"Added new item '{item_info['item_name']}' to cart")
 
-    # Update cart
+    # Update cart — reassign and flag as modified so SQLAlchemy detects the mutation
     cart.items = current_items
     cart.total_amount = _recalculate_total(current_items)
+    flag_modified(cart, "items")
     db.commit()
     db.refresh(cart)
 
@@ -197,6 +199,7 @@ async def remove_from_cart(
 
     cart.items = current_items
     cart.total_amount = _recalculate_total(current_items)
+    flag_modified(cart, "items")
     db.commit()
     db.refresh(cart)
 
