@@ -168,7 +168,6 @@ async def build_rightside_payload() -> Dict[str, Any]:
     }
     system_prompt = prompt_template.format_map(SafeDict(**format_kwargs))
 
-    system_prompt = _SYSTEM_PROMPT
     try:
         menu_path = Path("menu.txt")
         if menu_path.exists():
