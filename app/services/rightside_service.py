@@ -304,6 +304,17 @@ async def build_rightside_payload() -> Dict[str, Any]:
     """Build the full configuration payload for Rock8 Voice API."""
     settings = get_settings()
 
+    system_prompt = _SYSTEM_PROMPT
+    try:
+        menu_path = Path("menu.txt")
+        if menu_path.exists():
+            menu_content = menu_path.read_text(encoding="utf-8")
+            system_prompt += "\n\n--- COMPLETE MENU DATA ---\n" + menu_content
+        else:
+            logger.warning("menu.txt not found, complete menu not added to prompt.")
+    except Exception as e:
+        logger.error(f"Failed to read menu.txt: {e}")
+
     return {
         "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
         "language": "hi-IN",
@@ -320,7 +331,7 @@ async def build_rightside_payload() -> Dict[str, Any]:
             "activation_threshold": 0.3,
             "min_speech_duration": 0.2
         },
-        "system_prompt": _SYSTEM_PROMPT,
+        "system_prompt": system_prompt,
         "tools": get_tool_definitions(settings.BASE_URL),
     }
 
