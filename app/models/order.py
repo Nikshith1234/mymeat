@@ -27,6 +27,12 @@ class PosStatus(str, enum.Enum):
     FAILED = "FAILED"
 
 
+class KitchenStatus(str, enum.Enum):
+    PENDING = "pending"
+    PREPARING = "preparing"
+    READY = "ready"
+
+
 class Order(Base):
     __tablename__ = "orders"
 
@@ -42,6 +48,9 @@ class Order(Base):
     )
     pos_status = Column(
         Enum(PosStatus), nullable=False, default=PosStatus.NOT_SENT
+    )
+    kitchen_status = Column(
+        Enum(KitchenStatus), nullable=False, default=KitchenStatus.PENDING
     )
     razorpay_payment_link_id = Column(String(100), nullable=True)
     razorpay_payment_id = Column(String(100), nullable=True)

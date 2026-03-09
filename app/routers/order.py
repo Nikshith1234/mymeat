@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.cart import Cart
-from app.models.order import Order, OrderItem, OrderType, PaymentStatus, PosStatus
+from app.models.order import Order, OrderItem, OrderType, PaymentStatus, PosStatus, KitchenStatus
 from app.schemas.order_schema import PlaceOrderRequest, PlaceOrderResponse
 from app.schemas.cart_schema import CartItemSchema
 from app.utils.id_generator import generate_order_id
@@ -194,7 +194,7 @@ async def get_all_orders(db: Session = Depends(get_db)):
             payment_status=order.payment_status.value if hasattr(order.payment_status, 'value') else str(order.payment_status),
             pos_status=order.pos_status.value if hasattr(order.pos_status, 'value') else str(order.pos_status),
             total_amount=order.total_amount,
-            status=status,
+            status=order.kitchen_status.value if hasattr(order.kitchen_status, 'value') else str(order.kitchen_status),
             items=order_items,
             timestamp=timestamp_str
         )
@@ -218,3 +218,26 @@ async def clear_order(order_id: str, db: Session = Depends(get_db)):
     db.delete(order)
     db.commit()
     return {"success": True, "message": f"Order {order_id} cleared"}
+
+
+from pydantic import BaseModel
+
+class StatusUpdate(BaseModel):
+    status: str
+
+@router.patch("/orders/{order_id}/status")
+async def update_order_status(order_id: str, body: StatusUpdate, db: Session = Depends(get_db)):
+    """
+    Update kitchen status of an order (pending → preparing → ready).
+    """
+    order = db.query(Order).filter(Order.order_id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    try:
+        order.kitchen_status = KitchenStatus(body.status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid status '{body.status}'. Must be pending, preparing, or ready.")
+
+    db.commit()
+    return {"success": True, "order_id": order_id, "status": order.kitchen_status.value}
