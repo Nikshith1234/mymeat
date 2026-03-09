@@ -185,7 +185,7 @@ async def build_rightside_payload() -> Dict[str, Any]:
         "realtime_config": {
             "provider": "ultravox",
             "config": {
-                "voice": "Aakash-hindi",
+                "voice": "Aakash-Hindi",
                 "temperature": 0.4
             }
         },
