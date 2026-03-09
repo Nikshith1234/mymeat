@@ -168,6 +168,17 @@ async def build_rightside_payload() -> Dict[str, Any]:
     }
     system_prompt = prompt_template.format_map(SafeDict(**format_kwargs))
 
+    system_prompt = _SYSTEM_PROMPT
+    try:
+        menu_path = Path("menu.txt")
+        if menu_path.exists():
+            menu_content = menu_path.read_text(encoding="utf-8")
+            system_prompt += "\n\n--- COMPLETE MENU DATA ---\n" + menu_content
+        else:
+            logger.warning("menu.txt not found, complete menu not added to prompt.")
+    except Exception as e:
+        logger.error(f"Failed to read menu.txt: {e}")
+
     return {
         "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
         "language": "hi-IN",
