@@ -82,18 +82,22 @@ async def get_formatted_menu_summary() -> str:
         return "Menu unavailable."
 
 
-def get_tool_definitions(base_url: str) -> List[Dict[str, Any]]:
+_PROD_BASE_URL = "https://mymeat-afum.onrender.com"
+
+
+def get_tool_definitions() -> List[Dict[str, Any]]:
     """
-    Define tools in Rock8 format.
+    Define tools in Rock8 format using the production Render URL.
     Each parameter MUST have: name, type, description, location, required
     location can be: "body", "query", or "header"
     """
+    base = _PROD_BASE_URL
     return [
         {
             "name": "add_to_cart",
             "description": "Add an item to the shopping cart. Call IMMEDIATELY when customer confirms an item. One call per item.",
             "method": "POST",
-            "url": f"{base_url}/api/add_to_cart",
+            "url": f"{base}/api/add_to_cart",
             "headers": {},
             "parameters": [
                 {"name": "session_id", "type": "string", "description": "Caller phone number exactly as in CALLER PHONE field.", "location": "body", "required": True},
@@ -106,7 +110,7 @@ def get_tool_definitions(base_url: str) -> List[Dict[str, Any]]:
             "name": "remove_from_cart",
             "description": "Remove a specific item from cart when customer asks to cancel or remove.",
             "method": "POST",
-            "url": f"{base_url}/api/remove_from_cart",
+            "url": f"{base}/api/remove_from_cart",
             "headers": {},
             "parameters": [
                 {"name": "session_id", "type": "string", "description": "Caller phone number. Must match value used in add_to_cart.", "location": "body", "required": True},
@@ -118,7 +122,7 @@ def get_tool_definitions(base_url: str) -> List[Dict[str, Any]]:
             "name": "calculate_total",
             "description": "Get all items in cart and total price. Call after customer says done ordering.",
             "method": "POST",
-            "url": f"{base_url}/api/calculate_total",
+            "url": f"{base}/api/calculate_total",
             "headers": {},
             "parameters": [
                 {"name": "session_id", "type": "string", "description": "Caller phone number. Must match value used in add_to_cart.", "location": "body", "required": True}
@@ -128,7 +132,7 @@ def get_tool_definitions(base_url: str) -> List[Dict[str, Any]]:
             "name": "place_order",
             "description": "Place final confirmed order. Call ONLY after items, total, delivery method and name all confirmed.",
             "method": "POST",
-            "url": f"{base_url}/api/place_order",
+            "url": f"{base}/api/place_order",
             "headers": {},
             "parameters": [
                 {"name": "session_id", "type": "string", "description": "Caller phone number. Must match value used in add_to_cart.", "location": "body", "required": True},
@@ -149,7 +153,7 @@ async def build_rightside_payload() -> Dict[str, Any]:
     next_slot = (now + datetime.timedelta(minutes=30)).strftime("%H:%M")
     menu_summary = await get_formatted_menu_summary()
 
-    # Read the prompt template from file
+    # Read the prompt template from file — SafeDict keeps un-replaced {placeholders} intact
     try:
         with open("my meatcraftprompt.txt", "r", encoding="utf-8") as f:
             prompt_template = f.read()
@@ -157,26 +161,14 @@ async def build_rightside_payload() -> Dict[str, Any]:
         logger.error(f"Failed to read prompt file: {e}")
         prompt_template = "You are Aakash, a Meatcraft assistant. Help the user order."
 
-    # SafeDict keeps any un-replaced {placeholders} intact (e.g. {caller_number})
     format_kwargs = {
         "current_date": now.strftime("%Y-%m-%d"),
         "caller_number": "{caller_number}",
         "menu_items": menu_summary,
         "current_time": now.strftime("%H:%M"),
         "next_slot": next_slot,
-        "cart_id": "{session_id}"
     }
     system_prompt = prompt_template.format_map(SafeDict(**format_kwargs))
-
-    try:
-        menu_path = Path("menu.txt")
-        if menu_path.exists():
-            menu_content = menu_path.read_text(encoding="utf-8")
-            system_prompt += "\n\n--- COMPLETE MENU DATA ---\n" + menu_content
-        else:
-            logger.warning("menu.txt not found, complete menu not added to prompt.")
-    except Exception as e:
-        logger.error(f"Failed to read menu.txt: {e}")
 
     return {
         "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
@@ -195,7 +187,7 @@ async def build_rightside_payload() -> Dict[str, Any]:
             "min_speech_duration": 0.2
         },
         "system_prompt": system_prompt,
-        "tools": get_tool_definitions(settings.BASE_URL),
+        "tools": get_tool_definitions(),
     }
 
 
