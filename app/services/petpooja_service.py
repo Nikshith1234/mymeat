@@ -18,6 +18,7 @@ Get IDs from PetPooja dashboard → Menu → each item.
 Replace all "FILL_IN" strings with real numeric IDs.
 """
 
+import json
 import logging
 import httpx
 from datetime import datetime
@@ -248,6 +249,7 @@ async def send_to_petpooja(order, order_items: list) -> bool:
     """
     payload = build_petpooja_payload(order, order_items)
     logger.info(f"Sending order {order.order_id} to PetPooja...")
+    logger.info(f"PetPooja payload:\n{json.dumps(payload, indent=2)}")
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
