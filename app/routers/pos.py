@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.order import Order, OrderItem, PaymentStatus, PosStatus
 from app.schemas.order_schema import PushToPosRequest, PushToPosResponse
-from app.services.petpooja_service import push_order
+from app.services.petpooja_service import send_to_petpooja
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["POS"])
@@ -49,35 +49,14 @@ async def push_to_pos(
             pos_status=PosStatus.SENT.value,
         )
 
-    # ── Format order data ──
-    order_dict = {
-        "order_id": order.order_id,
-        "customer_phone": order.customer_phone,
-        "customer_name": order.customer_name,
-        "address": order.address,
-        "order_type": order.order_type.value,
-        "total_amount": order.total_amount,
-    }
-    items_list = [
-        {
-            "item_name": item.item_name,
-            "variation": item.variation,
-            "quantity": item.quantity,
-            "price": item.price,
-            "final_price": item.final_price,
-        }
-        for item in order.items
-    ]
-
     # ── Push to POS ──
     try:
-        result = await push_order(order_dict, items_list)
+        success = await send_to_petpooja(order, order.items)
 
-        if result["success"]:
+        if success:
             order.pos_status = PosStatus.SENT
             db.commit()
             logger.info(f"Order {request.order_id} pushed to POS (manual)")
-
             return PushToPosResponse(
                 success=True,
                 message=f"Order {request.order_id} pushed to POS successfully",
@@ -87,11 +66,10 @@ async def push_to_pos(
         else:
             order.pos_status = PosStatus.FAILED
             db.commit()
-            logger.error(f"Manual POS push failed: {result['message']}")
-
+            logger.error(f"Manual POS push failed for {request.order_id}")
             return PushToPosResponse(
                 success=False,
-                message=result["message"],
+                message="POS push failed — check logs for details",
                 order_id=request.order_id,
                 pos_status=PosStatus.FAILED.value,
             )
@@ -100,10 +78,11 @@ async def push_to_pos(
         order.pos_status = PosStatus.FAILED
         db.commit()
         logger.error(f"POS push exception: {e}")
-
         return PushToPosResponse(
             success=False,
             message=f"POS push error: {str(e)}",
             order_id=request.order_id,
             pos_status=PosStatus.FAILED.value,
         )
+
+
