@@ -1,9 +1,11 @@
 """
 Cart SQLAlchemy model for temporary session-based storage.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import Column, Integer, String, Float, DateTime, JSON
 from app.database import Base
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 class Cart(Base):
@@ -15,13 +17,13 @@ class Cart(Base):
     total_amount = Column(Float, nullable=False, default=0.0)
     created_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(IST),
         nullable=False,
     )
     updated_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(IST),
+        onupdate=lambda: datetime.now(IST),
         nullable=False,
     )
 

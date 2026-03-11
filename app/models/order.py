@@ -2,12 +2,14 @@
 Order and OrderItem SQLAlchemy models.
 """
 import enum
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import (
     Column, Integer, String, Float, Enum, DateTime, ForeignKey, Text
 )
 from sqlalchemy.orm import relationship
 from app.database import Base
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 class OrderType(str, enum.Enum):
@@ -56,13 +58,13 @@ class Order(Base):
     razorpay_payment_id = Column(String(100), nullable=True)
     created_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(IST),
         nullable=False,
     )
     updated_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(IST),
+        onupdate=lambda: datetime.now(IST),
         nullable=False,
     )
 

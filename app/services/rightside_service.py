@@ -13,6 +13,8 @@ import datetime
 from typing import Dict, Any, List
 from pathlib import Path
 
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
 class SafeDict(dict):
     def __missing__(self, key):
         return '{' + key + '}'
@@ -147,7 +149,7 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
 async def build_rightside_payload() -> Dict[str, Any]:
     """Build the full configuration payload for Rock8 Voice API."""
     settings = get_settings()
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(IST)
     next_slot = (now + datetime.timedelta(minutes=30)).strftime("%H:%M")
     menu_summary = await get_formatted_menu_summary()
 
@@ -175,7 +177,7 @@ async def build_rightside_payload() -> Dict[str, Any]:
         "realtime_config": {
             "provider": "ultravox",
             "config": {
-                "voice": "Monika-English-Indian",
+                "voice": "Riya",
                 "temperature": 0.4
             }
         },
