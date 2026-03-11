@@ -98,7 +98,7 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             "description": "Add an item to the shopping cart. Call IMMEDIATELY when customer confirms an item. One call per item.",
             "method": "POST",
             "url": f"{base}/api/add_to_cart",
-            "headers": {},
+            "headers": {"X-Caller-Number": "{caller_number}"},
             "parameters": [
                 {"name": "session_id", "type": "string", "description": "Caller phone number exactly as in CALLER PHONE field.", "location": "body", "required": True},
                 {"name": "item_name", "type": "string", "description": "Exact name of the menu item as listed in the menu including any typos e.g. Mnutton Bone, Muttom Leg, Regular Chcicken, Fish Surmai Boneleess, FISH SINGHARA BONELESS.", "location": "body", "required": True},
@@ -111,7 +111,7 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             "description": "Remove a specific item from cart when customer asks to cancel or remove.",
             "method": "POST",
             "url": f"{base}/api/remove_from_cart",
-            "headers": {},
+            "headers": {"X-Caller-Number": "{caller_number}"},
             "parameters": [
                 {"name": "session_id", "type": "string", "description": "Caller phone number. Must match value used in add_to_cart.", "location": "body", "required": True},
                 {"name": "item_name", "type": "string", "description": "Exact name of the menu item to remove including any DB typos.", "location": "body", "required": True},
@@ -123,7 +123,7 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             "description": "Get all items in cart and total price. Call after customer says done ordering.",
             "method": "POST",
             "url": f"{base}/api/calculate_total",
-            "headers": {},
+            "headers": {"X-Caller-Number": "{caller_number}"},
             "parameters": [
                 {"name": "session_id", "type": "string", "description": "Caller phone number. Must match value used in add_to_cart.", "location": "body", "required": True}
             ]
@@ -133,7 +133,7 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             "description": "Place final confirmed order. Call ONLY after items, total, delivery method and name all confirmed.",
             "method": "POST",
             "url": f"{base}/api/place_order",
-            "headers": {},
+            "headers": {"X-Caller-Number": "{caller_number}"},
             "parameters": [
                 {"name": "session_id", "type": "string", "description": "Caller phone number. Must match value used in add_to_cart.", "location": "body", "required": True},
                 {"name": "customer_phone", "type": "string", "description": "Caller phone number same as session_id.", "location": "body", "required": True},

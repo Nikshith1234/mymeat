@@ -50,13 +50,20 @@ async def add_to_cart(
     """
     Add an item to the cart. Validates item against the menu.
     If item+variation already exists, increments quantity.
+    Real caller phone is extracted from X-Caller-Number header (Rock8 injects SIP FROM).
     """
-    # ── Log all headers to find real caller number from Rock8 ──
-    rock8_headers = dict(raw_request.headers)
-    logger.info(f"[ROCK8 HEADERS] add_to_cart called. Headers: {rock8_headers}")
-    logger.info(f"[ROCK8 HEADERS] session_id from AI: {request.session_id}")
+    # ── Extract real caller number from Rock8 SIP header ──
+    real_phone = raw_request.headers.get("x-caller-number", "").strip()
+    # Validate: not empty, not a literal placeholder like {caller_number}
+    if real_phone and not real_phone.startswith("{"):
+        session_id = real_phone
+        logger.info(f"[CALLER] Using SIP header phone: {real_phone}")
+    else:
+        session_id = request.session_id
+        logger.info(f"[CALLER] Header absent/invalid ('{real_phone}'), using AI session_id: {session_id}")
+
     logger.info(
-        f"Adding to cart: session={request.session_id}, "
+        f"Adding to cart: session={session_id}, "
         f"item={request.item_name}, variation={request.variation}, "
         f"qty={request.quantity}"
     )
@@ -77,7 +84,7 @@ async def add_to_cart(
         raise HTTPException(status_code=503, detail="Menu service unavailable")
 
     # Get or create cart
-    cart = _get_or_create_cart(db, request.session_id)
+    cart = _get_or_create_cart(db, session_id)
     current_items = list(cart.items) if cart.items else []
 
     # Check for duplicate item+variation — increment quantity if found

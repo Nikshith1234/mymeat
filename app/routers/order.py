@@ -3,7 +3,7 @@ Order router — handles order placement from cart.
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -23,19 +23,22 @@ router = APIRouter(tags=["Orders"])
 @router.post("/place_order", response_model=PlaceOrderResponse)
 async def place_order(
     request: PlaceOrderRequest,
+    raw_request: Request,
     db: Session = Depends(get_db),
 ):
     """
     Place an order from the current cart.
-
-    Steps:
-    1. Validate cart exists and is not empty
-    2. Validate order_type and address
-    3. Create Order + OrderItem records
-    4. Generate Razorpay payment link
-    5. Clear the cart
-    6. Return payment link to caller
+    Real caller phone is extracted from X-Caller-Number header (injected by Rock8/SIP).
     """
+    # ── Extract real caller phone from Rock8 header, override AI-provided value ──
+    real_phone = raw_request.headers.get("x-caller-number", "").strip()
+    if real_phone and not real_phone.startswith("{"):
+        customer_phone = real_phone
+        logger.info(f"[CALLER] place_order using SIP header phone: {real_phone}")
+    else:
+        customer_phone = request.customer_phone
+        logger.info(f"[CALLER] place_order header absent, using AI phone: {customer_phone}")
+
     logger.info(
         f"Placing order: session={request.session_id}, "
         f"phone={request.customer_phone}, type={request.order_type}"
@@ -57,7 +60,8 @@ async def place_order(
         )
 
     # ── Get cart ──
-    cart = db.query(Cart).filter(Cart.session_id == request.session_id).first()
+    # Cart was created with session_id = real caller phone (from X-Caller-Number header)
+    cart = db.query(Cart).filter(Cart.session_id == customer_phone).first()
     if cart is None or not cart.items:
         return PlaceOrderResponse(
             success=False,
@@ -77,7 +81,7 @@ async def place_order(
     # ── Create Order record ──
     order = Order(
         order_id=order_id,
-        customer_phone=request.customer_phone,
+        customer_phone=customer_phone,  # real SIP caller number
         customer_name=request.customer_name,
         address=request.address,
         order_type=OrderType(order_type_upper),
