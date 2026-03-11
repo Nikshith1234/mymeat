@@ -39,6 +39,11 @@ async def place_order(
         f"Placing order: session={request.session_id}, "
         f"phone={request.customer_phone}, type={request.order_type}"
     )
+    print(f"\n==============================================")
+    print(f"📞 AAKASH CALLED: PLACE ORDER")
+    print(f"📞 DETECTED CALLER PHONE: {request.session_id}")
+    print(f"==============================================\n")
+
 
     # ── Validate order type ──
     order_type_upper = request.order_type.upper()

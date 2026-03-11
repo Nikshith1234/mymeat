@@ -57,6 +57,11 @@ async def add_to_cart(
     )
 
     # Validate item against menu
+    print(f"\n==============================================")
+    print(f"📞 AAKASH CALLED: ADD TO CART")
+    print(f"📞 DETECTED CALLER PHONE: {request.session_id}")
+    print(f"==============================================\n")
+
     try:
         item_info = await validate_item(request.item_name, request.variation)
     except ValueError as e:
@@ -129,6 +134,11 @@ async def calculate_total(
 ):
     """Return full cart contents and total amount."""
     logger.info(f"Calculating total for session={request.session_id}")
+    print(f"\n==============================================")
+    print(f"📞 AAKASH CALLED: CALCULATE TOTAL")
+    print(f"📞 DETECTED CALLER PHONE: {request.session_id}")
+    print(f"==============================================\n")
+
 
     cart = db.query(Cart).filter(Cart.session_id == request.session_id).first()
 
@@ -164,6 +174,11 @@ async def remove_from_cart(
         f"Removing from cart: session={request.session_id}, "
         f"item={request.item_name}, variation={request.variation}"
     )
+    print(f"\n==============================================")
+    print(f"📞 AAKASH CALLED: REMOVE FROM CART")
+    print(f"📞 DETECTED CALLER PHONE: {request.session_id}")
+    print(f"==============================================\n")
+
 
     cart = db.query(Cart).filter(Cart.session_id == request.session_id).first()
 

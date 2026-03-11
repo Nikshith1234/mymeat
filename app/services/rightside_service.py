@@ -82,16 +82,14 @@ async def get_formatted_menu_summary() -> str:
         return "Menu unavailable."
 
 
-_PROD_BASE_URL = "https://mymeat-afum.onrender.com"
-
-
 def get_tool_definitions() -> List[Dict[str, Any]]:
     """
-    Define tools in Rock8 format using the production Render URL.
+    Define tools in Rock8 format using the URL from environment settings.
     Each parameter MUST have: name, type, description, location, required
     location can be: "body", "query", or "header"
     """
-    base = _PROD_BASE_URL
+    settings = get_settings()
+    base = settings.BASE_URL.rstrip('/')
     return [
         {
             "name": "add_to_cart",
