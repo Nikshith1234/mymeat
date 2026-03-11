@@ -25,10 +25,12 @@ class Settings(BaseSettings):
     RAZORPAY_WEBHOOK_SECRET: str = ""
 
     # Petpooja POS
-    PETPOOJA_API_URL: str = "https://api.petpooja.com/v2"
-    PETPOOJA_TOKEN: str = ""
-    PETPOOJA_RESTAURANT_ID: str = ""
+    PETPOOJA_API_URL: str = "https://pponlineordercb.petpooja.com"
     PETPOOJA_APP_KEY: str = ""
+    PETPOOJA_APP_SECRET: str = ""
+    PETPOOJA_ACCESS_TOKEN: str = ""
+    PETPOOJA_RESTAURANT_ID: str = ""
+    PETPOOJA_RESTAURANT_NAME: str = "Meatcraft"
 
 
 

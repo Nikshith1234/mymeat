@@ -18,28 +18,28 @@ const mergeOverrides = (serverOrders) => {
 };
 
 const TABS = [
-  { key: 'pending',   label: 'Pending',      color: 'orange'  },
-  { key: 'preparing', label: 'Started Prep', color: 'blue'    },
-  { key: 'ready',     label: 'Ready',        color: 'emerald' },
+  { key: 'pending', label: 'Pending', color: 'orange' },
+  { key: 'preparing', label: 'Started Prep', color: 'blue' },
+  { key: 'ready', label: 'Ready', color: 'emerald' },
 ];
 
 const tabStyles = {
-  orange:  { active: 'border-orange-500 text-orange-600',   badge: 'bg-orange-500',  num: 'text-orange-500'  },
-  blue:    { active: 'border-blue-500 text-blue-600',       badge: 'bg-blue-500',    num: 'text-blue-500'    },
+  orange: { active: 'border-orange-500 text-orange-600', badge: 'bg-orange-500', num: 'text-orange-500' },
+  blue: { active: 'border-blue-500 text-blue-600', badge: 'bg-blue-500', num: 'text-blue-500' },
   emerald: { active: 'border-emerald-500 text-emerald-600', badge: 'bg-emerald-500', num: 'text-emerald-500' },
 };
 
-const cardBorder    = { pending: 'border-orange-300', preparing: 'border-blue-300', ready: 'border-emerald-300' };
-const statusBadge   = {
-  pending:  'bg-orange-100 text-orange-700 border-orange-200',
-  preparing:'bg-blue-100 text-blue-700 border-blue-200',
-  ready:    'bg-emerald-100 text-emerald-700 border-emerald-200',
+const cardBorder = { pending: 'border-orange-300', preparing: 'border-blue-300', ready: 'border-emerald-300' };
+const statusBadge = {
+  pending: 'bg-orange-100 text-orange-700 border-orange-200',
+  preparing: 'bg-blue-100 text-blue-700 border-blue-200',
+  ready: 'bg-emerald-100 text-emerald-700 border-emerald-200',
 };
 
 export default function App() {
-  const [orders,    setOrders]    = useState([]);
+  const [orders, setOrders] = useState([]);
   const [activeTab, setActiveTab] = useState('pending');
-  const [loading,   setLoading]   = useState({});
+  const [loading, setLoading] = useState({});
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -96,7 +96,7 @@ export default function App() {
   };
 
   const countOf = (s) => orders.filter(o => o.status === s).length;
-  const visible  = orders.filter(o => o.status === activeTab);
+  const visible = orders.filter(o => o.status === activeTab);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
@@ -214,7 +214,12 @@ function OrderCard({ order, loading, onUpdateStatus, onClear }) {
       {/* Customer */}
       <div className="px-5 py-3 border-b border-slate-100 space-y-2">
         <div className="flex items-center justify-between">
-          <p className="font-bold text-slate-800">{order.customer_name}</p>
+          <div>
+            <p className="font-bold text-slate-800">{order.customer_name}</p>
+            <p className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-1">
+              <Phone className="w-3 h-3" /> {order.customer_phone}
+            </p>
+          </div>
           <a href={`tel:${order.customer_phone}`}
             className="flex items-center gap-1 text-xs font-bold text-indigo-600 border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors">
             <Phone className="w-3.5 h-3.5" /> Call

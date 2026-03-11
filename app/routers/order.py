@@ -3,7 +3,7 @@ Order router — handles order placement from cart.
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -13,6 +13,7 @@ from app.schemas.order_schema import PlaceOrderRequest, PlaceOrderResponse
 from app.schemas.cart_schema import CartItemSchema
 from app.utils.id_generator import generate_order_id
 from app.services.razorpay_service import create_payment_link
+from app.services.petpooja_service import send_to_petpooja
 
 
 logger = logging.getLogger(__name__)
@@ -22,19 +23,22 @@ router = APIRouter(tags=["Orders"])
 @router.post("/place_order", response_model=PlaceOrderResponse)
 async def place_order(
     request: PlaceOrderRequest,
+    raw_request: Request,
     db: Session = Depends(get_db),
 ):
     """
     Place an order from the current cart.
-
-    Steps:
-    1. Validate cart exists and is not empty
-    2. Validate order_type and address
-    3. Create Order + OrderItem records
-    4. Generate Razorpay payment link
-    5. Clear the cart
-    6. Return payment link to caller
+    Real caller phone is extracted from X-Caller-Number header (injected by Rock8/SIP).
     """
+    # ── Extract real caller phone from Rock8 header, override AI-provided value ──
+    real_phone = raw_request.headers.get("x-caller-number", "").strip()
+    if real_phone and not real_phone.startswith("{"):
+        customer_phone = real_phone
+        logger.info(f"[CALLER] place_order using SIP header phone: {real_phone}")
+    else:
+        customer_phone = request.customer_phone
+        logger.info(f"[CALLER] place_order header absent, using AI phone: {customer_phone}")
+
     logger.info(
         f"Placing order: session={request.session_id}, "
         f"phone={request.customer_phone}, type={request.order_type}"
@@ -61,7 +65,8 @@ async def place_order(
         )
 
     # ── Get cart ──
-    cart = db.query(Cart).filter(Cart.session_id == request.session_id).first()
+    # Cart was created with session_id = real caller phone (from X-Caller-Number header)
+    cart = db.query(Cart).filter(Cart.session_id == customer_phone).first()
     if cart is None or not cart.items:
         return PlaceOrderResponse(
             success=False,
@@ -81,7 +86,7 @@ async def place_order(
     # ── Create Order record ──
     order = Order(
         order_id=order_id,
-        customer_phone=request.customer_phone,
+        customer_phone=customer_phone,  # real SIP caller number
         customer_name=request.customer_name,
         address=request.address,
         order_type=OrderType(order_type_upper),
@@ -135,11 +140,23 @@ async def place_order(
 
     # ── Commit everything ──
     db.commit()
+    db.refresh(order)
 
     logger.info(
         f"Order {order_id} created successfully. "
         f"Total: ₹{total_amount}, Payment link: {payment_link_url}"
     )
+
+    # ── Send to PetPooja POS ──
+    try:
+        db_order_items = db.query(OrderItem).filter(OrderItem.order_id == order_id).all()
+        success = await send_to_petpooja(order, db_order_items)
+        order.pos_status = PosStatus.SENT if success else PosStatus.FAILED
+        db.commit()
+    except Exception as e:
+        logger.error(f"PetPooja send failed for {order_id}: {e}")
+        order.pos_status = PosStatus.FAILED
+        db.commit()
 
     return PlaceOrderResponse(
         success=True,

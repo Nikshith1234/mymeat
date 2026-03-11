@@ -1,164 +1,278 @@
 """
-Petpooja POS service — format and push orders to Petpooja API.
-Includes retry logic with exponential backoff (max 3 attempts).
-"""
-import time
-import logging
-from typing import Dict, Any, List
+PetPooja POS Integration Service.
 
+Sends confirmed Meatcraft orders to PetPooja's save_order API so they
+appear as Kitchen Order Tickets (KOTs) in the POS system automatically.
+
+HOW TO CONFIGURE (mentor will provide values):
+----------------------------------------------
+Add to .env:
+    PETPOOJA_APP_KEY=<from PetPooja dashboard>
+    PETPOOJA_APP_SECRET=<from PetPooja dashboard>
+    PETPOOJA_ACCESS_TOKEN=<from PetPooja dashboard>
+    PETPOOJA_RESTAURANT_ID=<your restID>
+    PETPOOJA_RESTAURANT_NAME=Meatcraft
+
+Then fill in ITEM_ID_MAP below with PetPooja item IDs.
+Get IDs from PetPooja dashboard → Menu → each item.
+Replace all "FILL_IN" strings with real numeric IDs.
+"""
+
+import json
+import logging
 import httpx
+from datetime import datetime
+import pytz
 
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
-MAX_RETRIES = 3
-BASE_DELAY = 2  # seconds
+PETPOOJA_SAVE_ORDER_URL = "https://pponlineordercb.petpooja.com/save_order"
+IST = pytz.timezone("Asia/Kolkata")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ITEM ID MAP  ← Mentor: replace every "FILL_IN" with PetPooja item ID
+# Key format:  "Item Name (Variation)"  or  "Item Name"  (if no variation)
+# ─────────────────────────────────────────────────────────────────────────────
+ITEM_ID_MAP: dict = {
+    # ── Chicken ──
+    "Chicken Curry Cut (250 Grms)":                "FILL_IN",
+    "Chicken Curry Cut (1 Kg)":                    "FILL_IN",
+    "Chicken Boneless Breast (250 Grms)":          "FILL_IN",
+    "Chicken Boneless Breast (500 Grms)":          "FILL_IN",
+    "Chicken Boneless Breast (750 Grms)":          "FILL_IN",
+    "Chicken Boneless Breast (1 Kg)":              "FILL_IN",
+    "Chicken Thigh Boneless (250 Grms)":           "FILL_IN",
+    "Chicken Thigh Boneless (500 Grms)":           "FILL_IN",
+    "Chicken Thigh Boneless (750 Grms)":           "FILL_IN",
+    "Chicken Thigh Boneless (1 Kg)":               "FILL_IN",
+    "Chicken Wings (250 Grms)":                    "FILL_IN",
+    "Chicken Wings (500 Grms)":                    "FILL_IN",
+    "Chicken Wings (750 Grms)":                    "FILL_IN",
+    "Chicken Wings (1 Kg)":                        "FILL_IN",
+    "Chicken Kalmi (250 Grms)":                    "FILL_IN",
+    "Chicken Kalmi (500 Grms)":                    "FILL_IN",
+    "Chicken Kalmi (750 Grms)":                    "FILL_IN",
+    "Chicken Kalmi (1 Kg)":                        "FILL_IN",
+    "Chicken Tangri (250 Grms)":                   "FILL_IN",
+    "Chicken Tangri (500 Grms)":                   "FILL_IN",
+    "Chicken Tangri (750 Grms)":                   "FILL_IN",
+    "Chicken Tangri (1 Kg)":                       "FILL_IN",
+    "Chicken Full Leg (250 Grms)":                 "FILL_IN",
+    "Chicken Full Leg (500 Grms)":                 "FILL_IN",
+    "Chicken Full Leg (1 Kg)":                     "FILL_IN",
+    "Chicken Keema (250 Grms)":                    "FILL_IN",
+    "Chicken Keema (500 Grms)":                    "FILL_IN",
+    "Chicken Keema (1 Kg)":                        "FILL_IN",
+    "Chicken Liver (1 Kg)":                        "FILL_IN",
+    "Regular Chicken (1 Kg)":                      "FILL_IN",
+    "Chicken Broiler (Pcs)":                       "FILL_IN",
+    "Chicken Lollipop (500 Grms)":                 "FILL_IN",
+    "Chicken Lollipop (1 Kg)":                     "FILL_IN",
+    "Chicken Bones (1 Kg)":                        "FILL_IN",
+    "Chicken Boneless Breast With Wings (1 Kg)":   "FILL_IN",
+    "Chicken Breast With Bone (1 Kg)":             "FILL_IN",
+    # ── Mutton ──
+    "Mutton Curry Cut (250 Grms)":                 "FILL_IN",
+    "Mutton Curry Cut (500 Grms)":                 "FILL_IN",
+    "Mutton Curry Cut (750 Grms)":                 "FILL_IN",
+    "Mutton Curry Cut (1 Kg)":                     "FILL_IN",
+    "Mutton Boneless (250 Grms)":                  "FILL_IN",
+    "Mutton Boneless (1 Kg)":                      "FILL_IN",
+    "Mutton Keema (250 Grms)":                     "FILL_IN",
+    "Mutton Keema (500 Grms)":                     "FILL_IN",
+    "Mutton Keema (750 Grms)":                     "FILL_IN",
+    "Mutton Keema (1 Kg)":                         "FILL_IN",
+    "Mutton Chop (250 Grms)":                      "FILL_IN",
+    "Mutton Chop (500 Grms)":                      "FILL_IN",
+    "Mutton Chop (750 Grms)":                      "FILL_IN",
+    "Mutton Chop (1 Kg)":                          "FILL_IN",
+    "Mutton Nali (250 Grms)":                      "FILL_IN",
+    "Mutton Nali (500 Grms)":                      "FILL_IN",
+    "Mutton Nali (750 Grms)":                      "FILL_IN",
+    "Mutton Nali (1 Kg)":                          "FILL_IN",
+    "Mutton Barra (250 Grms)":                     "FILL_IN",
+    "Mutton Barra (500 Grms)":                     "FILL_IN",
+    "Mutton Barra (750 Grms)":                     "FILL_IN",
+    "Mutton Barra (1 Kg)":                         "FILL_IN",
+    "Mutton Leg (250 Grms)":                       "FILL_IN",
+    "Mutton Leg (500 Grms)":                       "FILL_IN",
+    "Mutton Leg (750 Grms)":                       "FILL_IN",
+    "Mutton Leg (1 Kg)":                           "FILL_IN",
+    "Mutton Liver (250 Grms)":                     "FILL_IN",
+    "Mutton Liver (500 Grms)":                     "FILL_IN",
+    "Mutton Liver (750 Grms)":                     "FILL_IN",
+    "Mutton Liver (1 Kg)":                         "FILL_IN",
+    "Mutton Gurde Kapoore (250 Grms)":             "FILL_IN",
+    "Mutton Gurde Kapoore (500 Grms)":             "FILL_IN",
+    "Mutton Gurde Kapoore (750 Grms)":             "FILL_IN",
+    "Mutton Gurde Kapoore (1 Kg)":                 "FILL_IN",
+    "Mutton Bone (1 Kg)":                          "FILL_IN",
+    "Mutton Head Cut (1 Kg)":                      "FILL_IN",
+    "Mutton Fat (1 Kg)":                           "FILL_IN",
+    "Roasted Paya (1 Kg)":                         "FILL_IN",
+    "Goat Brain (1 Kg)":                           "FILL_IN",
+    "Lamb Shank (1 Kg)":                           "FILL_IN",
+    # ── Sea Food ──
+    "Fish Basa Imported (1 Kg)":                   "FILL_IN",
+    "Fish Surmai Boneless (250 Grms)":             "FILL_IN",
+    "Fish Surmai Boneless (500 Grms)":             "FILL_IN",
+    "Fish Surmai Boneless (750 Grms)":             "FILL_IN",
+    "Fish Surmai Boneless (1 Kg)":                 "FILL_IN",
+    "Fish River Sole Boneless (250 Grms)":         "FILL_IN",
+    "Fish River Sole Boneless (500 Grms)":         "FILL_IN",
+    "Fish River Sole Boneless (750 Grms)":         "FILL_IN",
+    "Fish River Sole Boneless (1 Kg)":             "FILL_IN",
+    "Fish Singhara Boneless (250 Grms)":           "FILL_IN",
+    "Fish Singhara Boneless (500 Grms)":           "FILL_IN",
+    "Fish Singhara Boneless (750 Grms)":           "FILL_IN",
+    "Fish Singhara Boneless (1 Kg)":               "FILL_IN",
+}
 
 
-def _format_order_for_petpooja(
-    order: Dict[str, Any],
-    items: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+def _get_item_id(item_name: str, variation: str | None) -> str:
+    """Return PetPooja item ID for an item+variation combo."""
+    key = f"{item_name} ({variation})" if variation else item_name
+    item_id = ITEM_ID_MAP.get(key, "FILL_IN")
+    if item_id == "FILL_IN":
+        logger.warning(f"PetPooja item ID not mapped for: '{key}'")
+    return item_id
+
+
+def build_petpooja_payload(order, order_items: list) -> dict:
     """
-    Format an order into Petpooja-compatible schema.
-
-    Args:
-        order: Order data dict.
-        items: List of order item dicts.
-
-    Returns:
-        Petpooja-formatted order payload.
+    Build the PetPooja save_order JSON payload from an Order and its items.
+    Credentials are read from the .env file via settings.
     """
+    settings = get_settings()
+    now_ist = datetime.now(IST)
+
+    order_type_code = (
+        "P" if str(order.order_type).upper() in ("PICKUP", "ORDERTYPE.PICKUP")
+        else "D"
+    )
+
+    # Build items list in PetPooja format
     petpooja_items = []
-    for item in items:
+    for item in order_items:
+        item_id = _get_item_id(item.item_name, item.variation)
+        full_name = f"{item.item_name} {item.variation}" if item.variation else item.item_name
         petpooja_items.append({
-            "id": "",  # Petpooja item ID — map via POS catalog if available
-            "name": item.get("item_name", ""),
-            "quantity": str(item.get("quantity", 1)),
-            "price": str(item.get("price", 0)),
-            "final_price": str(item.get("final_price", 0)),
-            "variation_name": item.get("variation", ""),
-            "itemTax": "0",
-            "addon": [],
+            "id": item_id,
+            "name": full_name,
+            "price": f"{item.price:.2f}",
+            "item_discount": "0",
+            "final_price": f"{item.final_price:.2f}",
+            "quantity": str(item.quantity),
+            "description": "",
+            "variation_name": item.variation or "",
+            "variation_id": "",
+            "tax_inclusive": False,
+            "gst_liability": "restaurant",
+            "item_tax": [],
+            "AddonItem": {"details": []},
         })
 
-    payload = {
-        "app_key": settings.PETPOOJA_APP_KEY,
-        "app_secret": settings.PETPOOJA_TOKEN,
-        "restID": settings.PETPOOJA_RESTAURANT_ID,
-        "orderinfo": {
-            "OrderID": order.get("order_id", ""),
-            "OnlineOrderID": order.get("order_id", ""),
-            "OrderType": "H" if order.get("order_type") == "DELIVERY" else "T",
-            "Customer": {
-                "name": order.get("customer_name", ""),
-                "mobile": order.get("customer_phone", ""),
-                "address": order.get("address", ""),
-            },
-            "PaymentMode": "ONLINE",
-            "PaymentStatus": "PAID",
-            "TotalAmount": str(order.get("total_amount", 0)),
-            "DeliveryCharge": "0",
-            "Tax": "0",
-            "Discount": "0",
-            "items": petpooja_items,
-        },
-    }
+    # Strip + from phone for PetPooja
+    phone = str(order.customer_phone or "").replace("+", "").strip()
 
-    return payload
-
-
-async def push_order(
-    order: Dict[str, Any],
-    items: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    """
-    Push a confirmed order to Petpooja POS with retry logic.
-
-    Args:
-        order: Order data dict (order_id, customer_phone, etc.).
-        items: List of order item dicts.
-
-    Returns:
-        Dict with keys: success, message, attempts
-
-    Raises:
-        Exception: If all retry attempts fail.
-    """
-    payload = _format_order_for_petpooja(order, items)
-    url = f"{settings.PETPOOJA_API_URL}/pushOrder"
-
-    last_error = None
-
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    url,
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                )
-
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data.get("success") in [True, "1", 1]:
-                    logger.info(
-                        f"Order {order.get('order_id')} pushed to Petpooja "
-                        f"successfully on attempt {attempt}"
-                    )
-                    return {
-                        "success": True,
-                        "message": "Order pushed to POS successfully",
-                        "attempts": attempt,
-                    }
-                else:
-                    error_msg = response_data.get("message", "Unknown POS error")
-                    logger.warning(
-                        f"Petpooja rejected order {order.get('order_id')} "
-                        f"on attempt {attempt}: {error_msg}"
-                    )
-                    last_error = error_msg
-            else:
-                last_error = f"HTTP {response.status_code}: {response.text}"
-                logger.warning(
-                    f"Petpooja API error for order {order.get('order_id')} "
-                    f"on attempt {attempt}: {last_error}"
-                )
-
-        except httpx.TimeoutException:
-            last_error = "Request timeout"
-            logger.warning(
-                f"Petpooja timeout for order {order.get('order_id')} "
-                f"on attempt {attempt}"
-            )
-        except httpx.ConnectError:
-            last_error = "Connection failed"
-            logger.warning(
-                f"Petpooja connection error for order {order.get('order_id')} "
-                f"on attempt {attempt}"
-            )
-        except Exception as e:
-            last_error = str(e)
-            logger.error(
-                f"Unexpected error pushing order {order.get('order_id')} "
-                f"to Petpooja on attempt {attempt}: {e}"
-            )
-
-        # Exponential backoff before retry
-        if attempt < MAX_RETRIES:
-            delay = BASE_DELAY * (2 ** (attempt - 1))
-            logger.info(f"Retrying in {delay}s...")
-            time.sleep(delay)
-
-    # All attempts failed
-    logger.error(
-        f"Failed to push order {order.get('order_id')} to Petpooja "
-        f"after {MAX_RETRIES} attempts. Last error: {last_error}"
-    )
     return {
-        "success": False,
-        "message": f"POS push failed after {MAX_RETRIES} attempts: {last_error}",
-        "attempts": MAX_RETRIES,
+        "app_key":      settings.PETPOOJA_APP_KEY,
+        "app_secret":   settings.PETPOOJA_APP_SECRET,
+        "access_token": settings.PETPOOJA_ACCESS_TOKEN,
+        "orderinfo": {
+            "OrderInfo": {
+                "Restaurant": {
+                    "details": {
+                        "res_name":            settings.PETPOOJA_RESTAURANT_NAME,
+                        "address":             "NA",
+                        "contact_information": "NA",
+                        "restID":              settings.PETPOOJA_RESTAURANT_ID,
+                    }
+                },
+                "Customer": {
+                    "details": {
+                        "email":     "ai.agent@meatcraft.com",
+                        "name":      order.customer_name or "NA",
+                        "address":   order.address or "NA",
+                        "phone":     phone,
+                        "latitude":  "NA",
+                        "longitude": "NA",
+                    }
+                },
+                "Order": {
+                    "details": {
+                        "orderID":          order.order_id,
+                        "preorder_date":    now_ist.strftime("%Y-%m-%d"),
+                        "preorder_time":    now_ist.strftime("%H:%M:%S"),
+                        "service_charge":   "0",
+                        "sc_tax_amount":    "0",
+                        "delivery_charges": "0",
+                        "dc_tax_percentage":"0",
+                        "dc_tax_amount":    "0",
+                        "packing_charges":  "0",
+                        "pc_tax_percentage":"0",
+                        "pc_tax_amount":    "0",
+                        "order_type":       order_type_code,
+                        "advanced_order":   "N",
+                        "urgent_order":     False,
+                        "urgent_time":      0,
+                        "payment_type":     "ONLINE",
+                        "discount_total":   "0",
+                        "discount_type":    "F",
+                        "tax_total":        "0.00",
+                        "total":            f"{order.total_amount:.2f}",
+                        "description":      "",
+                        "created_on":       now_ist.strftime("%Y-%m-%d %H:%M:%S"),
+                        "enable_delivery":  1,
+                        "min_prep_time":    20,
+                        "callback_url":     "NA",
+                        "collect_cash":     "0",
+                        "otp":              "",
+                    }
+                },
+                "OrderItem": {"details": petpooja_items},
+                "Tax":       {"details": []},
+            }
+        },
+        "udid":        "",
+        "device_type": "agent",
     }
+
+
+async def send_to_petpooja(order, order_items: list) -> bool:
+    """
+    POST the order to PetPooja save_order API.
+    Returns True on success, False on failure.
+    order.pos_status is updated by the caller (order.py).
+    """
+    payload = build_petpooja_payload(order, order_items)
+    logger.info(f"Sending order {order.order_id} to PetPooja...")
+    logger.info(f"PetPooja payload:\n{json.dumps(payload, indent=2)}")
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                PETPOOJA_SAVE_ORDER_URL,
+                headers={"Content-Type": "application/json"},
+                json=payload,
+            )
+
+        logger.info(f"PetPooja [{response.status_code}]: {response.text[:300]}")
+
+        if response.status_code == 200:
+            data = response.json()
+            # PetPooja returns {"status": 1, "message": "..."} on success
+            if str(data.get("status")) == "1":
+                logger.info(f"Order {order.order_id} accepted by PetPooja ✅")
+                return True
+            logger.warning(f"PetPooja rejected order {order.order_id}: {data}")
+            return False
+
+        logger.error(f"PetPooja HTTP {response.status_code}: {response.text[:300]}")
+        return False
+
+    except Exception as e:
+        logger.error(f"PetPooja request failed for {order.order_id}: {e}")
+        return False

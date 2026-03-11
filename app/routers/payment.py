@@ -12,7 +12,7 @@ from fastapi import Depends
 from app.database import get_db
 from app.models.order import Order, PaymentStatus, PosStatus
 from app.services.razorpay_service import verify_webhook_signature
-from app.services.petpooja_service import push_order
+from app.services.petpooja_service import send_to_petpooja
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Payments"])
@@ -111,34 +111,12 @@ async def payment_webhook(
 
     # ── Trigger POS push ──
     try:
-        order_dict = {
-            "order_id": order.order_id,
-            "customer_phone": order.customer_phone,
-            "customer_name": order.customer_name,
-            "address": order.address,
-            "order_type": order.order_type.value,
-            "total_amount": order.total_amount,
-        }
-        items_list = [
-            {
-                "item_name": item.item_name,
-                "variation": item.variation,
-                "quantity": item.quantity,
-                "price": item.price,
-                "final_price": item.final_price,
-            }
-            for item in order.items
-        ]
-
-        pos_result = await push_order(order_dict, items_list)
-
-        if pos_result["success"]:
-            order.pos_status = PosStatus.SENT
+        success = await send_to_petpooja(order, order.items)
+        order.pos_status = PosStatus.SENT if success else PosStatus.FAILED
+        if success:
             logger.info(f"Order {order_id} pushed to POS successfully")
         else:
-            order.pos_status = PosStatus.FAILED
-            logger.error(f"POS push failed for order {order_id}: {pos_result['message']}")
-
+            logger.error(f"POS push failed for order {order_id}")
     except Exception as e:
         order.pos_status = PosStatus.FAILED
         logger.error(f"POS push exception for order {order_id}: {e}")
