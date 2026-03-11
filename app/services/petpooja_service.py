@@ -21,15 +21,15 @@ Replace all "FILL_IN" strings with real numeric IDs.
 import json
 import logging
 import httpx
-from datetime import datetime
-import pytz
+from datetime import datetime, timezone, timedelta
 
+IST = timezone(timedelta(hours=5, minutes=30))
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 PETPOOJA_SAVE_ORDER_URL = "https://pponlineordercb.petpooja.com/save_order"
-IST = pytz.timezone("Asia/Kolkata")
+# IST initialized above
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ITEM ID MAP  ← Mentor: replace every "FILL_IN" with PetPooja item ID
