@@ -5,7 +5,7 @@ Called by Ultravox tool-calling agent.
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -44,12 +44,17 @@ def _recalculate_total(items: list) -> float:
 @router.post("/add_to_cart", response_model=CartResponse)
 async def add_to_cart(
     request: AddToCartRequest,
+    raw_request: Request,
     db: Session = Depends(get_db),
 ):
     """
     Add an item to the cart. Validates item against the menu.
     If item+variation already exists, increments quantity.
     """
+    # ── Log all headers to find real caller number from Rock8 ──
+    rock8_headers = dict(raw_request.headers)
+    logger.info(f"[ROCK8 HEADERS] add_to_cart called. Headers: {rock8_headers}")
+    logger.info(f"[ROCK8 HEADERS] session_id from AI: {request.session_id}")
     logger.info(
         f"Adding to cart: session={request.session_id}, "
         f"item={request.item_name}, variation={request.variation}, "
