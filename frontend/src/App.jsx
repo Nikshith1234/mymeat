@@ -43,7 +43,9 @@ export default function App() {
 
   const fetchOrders = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/orders`);
+      const res = await fetch(`${API}/api/orders`, {
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+      });
       if (res.ok) setOrders(mergeOverrides(await res.json()));
     } catch (e) { console.error('Fetch error:', e); }
   }, []);
@@ -69,7 +71,10 @@ export default function App() {
       try {
         const res = await fetch(`${base}/api/orders/${orderId}/status`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true'
+          },
           body: JSON.stringify({ status: newStatus }),
         });
         if (res.ok) break;
