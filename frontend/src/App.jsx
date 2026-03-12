@@ -225,10 +225,16 @@ function OrderCard({ order, loading, onUpdateStatus, onClear }) {
             <Phone className="w-3.5 h-3.5" /> Call
           </a>
         </div>
-        {order.address && (
+        {order.order_type === 'DELIVERY' && order.address && (
           <p className="text-xs text-slate-500 flex items-start gap-1.5 font-medium">
             <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" />
             <span className="leading-snug">{order.address}</span>
+          </p>
+        )}
+        {order.order_type === 'PICKUP' && order.arrival_time && (
+          <p className="text-xs text-amber-600 flex items-start gap-1.5 font-bold bg-amber-50 p-2 rounded-lg border border-amber-100 mt-2">
+            <Clock className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="leading-snug">Pickup Time: {order.arrival_time}</span>
           </p>
         )}
       </div>

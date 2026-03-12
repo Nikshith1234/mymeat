@@ -184,7 +184,7 @@ async def build_petpooja_payload(order, order_items: list) -> dict:
                 },
                 "Customer": {
                     "details": {
-                        "email":     "ai.agent@meatcraft.com",
+                        "email":     "dummy.email@test.com",
                         "name":      order.customer_name or "NA",
                         "address":   order.address or "NA",
                         "phone":     phone,

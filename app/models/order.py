@@ -44,6 +44,7 @@ class Order(Base):
     customer_name = Column(String(100), nullable=False)
     address = Column(Text, nullable=True)
     order_type = Column(Enum(OrderType), nullable=False, default=OrderType.PICKUP)
+    arrival_time = Column(String(50), nullable=True)
     total_amount = Column(Float, nullable=False, default=0.0)
     payment_status = Column(
         Enum(PaymentStatus), nullable=False, default=PaymentStatus.PENDING

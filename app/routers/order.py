@@ -90,6 +90,7 @@ async def place_order(
         customer_name=request.customer_name,
         address=request.address,
         order_type=OrderType(order_type_upper),
+        arrival_time=request.arrival_time,
         total_amount=total_amount,
         payment_status=PaymentStatus.PAID,  # Instantly confirm the order for testing
         pos_status=PosStatus.NOT_SENT,
@@ -218,7 +219,8 @@ async def get_all_orders(db: Session = Depends(get_db)):
             total_amount=order.total_amount,
             status=order.kitchen_status.value if hasattr(order.kitchen_status, 'value') else str(order.kitchen_status),
             items=order_items,
-            timestamp=timestamp_str
+            timestamp=timestamp_str,
+            arrival_time=order.arrival_time
         )
         response_orders.append(order_data)
         
