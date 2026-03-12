@@ -30,9 +30,9 @@ async def place_order(
     Place an order from the current cart.
     Real caller phone is extracted from X-Caller-Number header (injected by Rock8/SIP).
     """
-    # ── Use caller_number as the real phone number ──
-    customer_phone = request.caller_number
-    logger.info(f"[CALLER] place_order using caller_number: {customer_phone}")
+    # ── Use caller_number if provided, else customer_phone, else empty ──
+    customer_phone = request.caller_number or request.customer_phone or ""
+    logger.info(f"[CALLER] place_order phone={customer_phone!r}")
 
     logger.info(
         f"Placing order: session={request.session_id}, "

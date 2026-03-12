@@ -9,8 +9,8 @@ from app.schemas.cart_schema import CartItemSchema
 class PlaceOrderRequest(BaseModel):
     """Request body for placing an order."""
     session_id: str = Field(..., description="Unique session ID for the cart (UUID generated at call start)")
-    caller_number: str = Field(..., description="Caller's actual phone number (e.g. +919876543210)")
-    customer_phone: str = Field(..., description="Customer phone number (same as caller_number)")
+    caller_number: Optional[str] = Field(None, description="Caller's actual phone number from metadata (e.g. +919876543210). Optional.")
+    customer_phone: Optional[str] = Field(None, description="Customer phone number. Optional, same as caller_number.")
     customer_name: str = Field(..., description="Customer name")
     address: Optional[str] = Field(None, description="Delivery address (required for DELIVERY)")
     order_type: str = Field("PICKUP", description="DELIVERY or PICKUP")

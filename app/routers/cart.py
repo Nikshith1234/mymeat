@@ -52,34 +52,15 @@ async def add_to_cart(
     If item+variation already exists, increments quantity.
     Real caller phone is extracted from X-Caller-Number header (Rock8 injects SIP FROM).
     """
-    # ── Validate caller_number looks like a real phone number ──
-    import re
-    digits_only = re.sub(r"[\s\+\-\(\)]", "", request.caller_number)
-    if not digits_only.isdigit() or len(digits_only) < 7:
-        logger.warning(f"[CALLER] Rejected invalid caller_number: '{request.caller_number}'")
-        return CartResponse(
-            success=False,
-            message=(
-                f"caller_number '{request.caller_number}' is not a valid phone number. "
-                "Pass the caller's actual phone number (digits, e.g. +919876543210)."
-            ),
-            cart_items=[],
-            cart_total=0.0,
-        )
-
-    # Use session_id (UUID) as cart key, caller_number for phone tracking
+    # Use session_id (UUID) as cart key; caller_number is optional metadata
     session_id = request.session_id
-    logger.info(f"[CART] session={session_id}, caller={request.caller_number}")
-    logger.info(
-        f"Adding to cart: session={session_id}, caller={request.caller_number}, "
-        f"item={request.item_name}, variation={request.variation}, "
-        f"qty={request.quantity}"
-    )
+    caller = request.caller_number or "unknown"
+    logger.info(f"[CART] add_to_cart: session={session_id}, caller={caller}, item={request.item_name}")
 
     print(f"\n==============================================")
     print(f"📞 Riya CALLED: ADD TO CART")
-    print(f"📞 SESSION ID: {request.session_id}")
-    print(f"📞 CALLER NUMBER: {request.caller_number}")
+    print(f"📞 SESSION ID: {session_id}")
+    print(f"📞 CALLER NUMBER: {caller}")
     print(f"==============================================\n")
 
     try:
