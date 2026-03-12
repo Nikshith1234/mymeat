@@ -1,8 +1,18 @@
 """
 Cart router — endpoints for managing the session-based shopping cart.
-Called by Ultravox tool-calling agent.
+Called by Rock8 voice agent tool calls.
+
+SESSION DESIGN:
+  The cart key is resolved server-side in this priority order:
+    1. X-Caller-Number header (injected by Rock8/SIP — most reliable)
+    2. caller_number body param (AI passes from call metadata)
+    3. session_id body param (last resort fallback)
+  This means the AI does NOT need to remember or track any session ID.
+  The same caller phone = same cart throughout the entire call.
 """
+import re
 import logging
+import uuid as _uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -25,11 +35,47 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Cart"])
 
 
-def _get_or_create_cart(db: Session, session_id: str) -> Cart:
+def _normalize_phone(raw: str) -> str:
+    """Strip formatting from phone number and return digits+leading+ only."""
+    return re.sub(r"[\s\-\(\)]", "", raw.strip())
+
+
+def _resolve_session(raw_request: Request, caller_number: Optional[str], session_id: str) -> str:
+    """
+    Resolve the cart session key from available sources, in priority order:
+      1. X-Caller-Number SIP header (most reliable — injected by Rock8)
+      2. caller_number body param (AI passes from call metadata)
+      3. session_id body param (fallback — AI-generated UUID or whatever)
+
+    If source 1 or 2 provide a numeric phone, we use them directly (digits normalized).
+    Using the phone number as the cart key means the same caller maps to the same
+    cart across ALL tool calls in a session — no AI memory required.
+    """
+    # Priority 1: Rock8 SIP header
+    header_phone = raw_request.headers.get("x-caller-number", "").strip()
+    if header_phone and not header_phone.startswith("{"):
+        digits = _normalize_phone(header_phone)
+        if digits and digits.lstrip("+").isdigit():
+            logger.info(f"[SESSION] Resolved from SIP header: {digits}")
+            return digits
+
+    # Priority 2: caller_number body param
+    if caller_number:
+        digits = _normalize_phone(caller_number)
+        if digits and digits.lstrip("+").isdigit() and len(digits) >= 7:
+            logger.info(f"[SESSION] Resolved from caller_number param: {digits}")
+            return digits
+
+    # Priority 3: session_id fallback (use as-is — could be UUID or anything)
+    logger.info(f"[SESSION] Using session_id as fallback: {session_id}")
+    return session_id.strip()
+
+
+def _get_or_create_cart(db: Session, session_key: str) -> Cart:
     """Get existing cart or create new one for the session."""
-    cart = db.query(Cart).filter(Cart.session_id == session_id).first()
+    cart = db.query(Cart).filter(Cart.session_id == session_key).first()
     if cart is None:
-        cart = Cart(session_id=session_id, items=[], total_amount=0.0)
+        cart = Cart(session_id=session_key, items=[], total_amount=0.0)
         db.add(cart)
         db.commit()
         db.refresh(cart)
@@ -48,49 +94,29 @@ async def add_to_cart(
     db: Session = Depends(get_db),
 ):
     """
-    Add an item to the cart. Validates item against the menu.
-    If item+variation already exists, increments quantity.
-    Real caller phone is extracted from X-Caller-Number header (Rock8 injects SIP FROM).
+    Add an item to the cart.
+    Cart session is resolved server-side from caller identity — AI does not need to track this.
     """
-    # Use session_id (UUID) as cart key; caller_number is optional metadata
-    raw_session = request.session_id.strip()
-    # Safeguard: if AI sends a phone number as session_id, convert it to a stable UUID-like key
-    import re
-    import uuid
-    digits_only = re.sub(r"[\s\+\-\(\)]", "", raw_session)
-    if digits_only.isdigit() and len(digits_only) >= 7:
-        # Derive a deterministic UUID from the phone so all AI calls for same phone map to same cart
-        session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, digits_only))
-        logger.warning(f"[SESSION] AI sent phone as session_id '{raw_session}' → normalised to UUID {session_id}")
-    else:
-        session_id = raw_session
-
-    caller = request.caller_number or "unknown"
-    logger.info(f"[CART] add_to_cart: session={session_id}, caller={caller}, item={request.item_name}")
-
+    session_key = _resolve_session(raw_request, request.caller_number, request.session_id)
 
     print(f"\n==============================================")
     print(f"📞 Riya CALLED: ADD TO CART")
-    print(f"📞 SESSION ID: {session_id}")
-    print(f"📞 CALLER NUMBER: {caller}")
+    print(f"📞 SESSION KEY: {session_key}")
+    print(f"📞 ITEM: {request.item_name} | VARIATION: {request.variation} | QTY: {request.quantity}")
     print(f"==============================================\n")
+
+    logger.info(f"[CART] add_to_cart: key={session_key}, item={request.item_name}, var={request.variation}, qty={request.quantity}")
 
     try:
         item_info = await validate_item(request.item_name, request.variation)
     except ValueError as e:
         logger.warning(f"Menu validation failed: {e}")
-        return CartResponse(
-            success=False,
-            message=str(e),
-            cart_items=[],
-            cart_total=0.0,
-        )
+        return CartResponse(success=False, message=str(e), cart_items=[], cart_total=0.0)
     except Exception as e:
         logger.error(f"Menu service error: {e}")
         raise HTTPException(status_code=503, detail="Menu service unavailable")
 
-    # Get or create cart
-    cart = _get_or_create_cart(db, session_id)
+    cart = _get_or_create_cart(db, session_key)
     current_items = list(cart.items) if cart.items else []
 
     # Check for duplicate item+variation — increment quantity if found
@@ -103,10 +129,7 @@ async def add_to_cart(
             existing_item["quantity"] += request.quantity
             existing_item["final_price"] = existing_item["quantity"] * existing_item["price"]
             found = True
-            logger.info(
-                f"Incremented quantity for '{item_info['item_name']}' "
-                f"to {existing_item['quantity']}"
-            )
+            logger.info(f"Incremented '{item_info['item_name']}' to qty={existing_item['quantity']}")
             break
 
     if not found:
@@ -120,22 +143,16 @@ async def add_to_cart(
         current_items.append(new_item)
         logger.info(f"Added new item '{item_info['item_name']}' to cart")
 
-    # Update cart — reassign and flag as modified so SQLAlchemy detects the mutation
     cart.items = current_items
     cart.total_amount = _recalculate_total(current_items)
     flag_modified(cart, "items")
     db.commit()
     db.refresh(cart)
 
-    # Build response
-    cart_items_schema = [
-        CartItemSchema(**item) for item in current_items
-    ]
-
     return CartResponse(
         success=True,
         message=f"'{item_info['item_name']}' added to cart successfully",
-        cart_items=cart_items_schema,
+        cart_items=[CartItemSchema(**item) for item in current_items],
         cart_total=cart.total_amount,
     )
 
@@ -143,23 +160,20 @@ async def add_to_cart(
 @router.post("/calculate_total", response_model=CalculateTotalResponse)
 async def calculate_total(
     request: CalculateTotalRequest,
+    raw_request: Request,
     db: Session = Depends(get_db),
 ):
     """Return full cart contents and total amount."""
-    logger.info(f"Calculating total for session={request.session_id}, caller={request.caller_number}")
+    session_key = _resolve_session(raw_request, request.caller_number, request.session_id)
+
     print(f"\n==============================================")
     print(f"📞 Riya CALLED: CALCULATE TOTAL")
-    print(f"📞 SESSION ID: {request.session_id}")
-    print(f"📞 CALLER NUMBER: {request.caller_number}")
+    print(f"📞 SESSION KEY: {session_key}")
     print(f"==============================================\n")
 
-    import re, uuid as _uuid
-    raw_s = request.session_id.strip()
-    _digits = re.sub(r"[\s\+\-\(\)]", "", raw_s)
-    _calc_session = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, _digits)) if (_digits.isdigit() and len(_digits) >= 7) else raw_s
+    logger.info(f"[CART] calculate_total: key={session_key}")
 
-    cart = db.query(Cart).filter(Cart.session_id == _calc_session).first()
-
+    cart = db.query(Cart).filter(Cart.session_id == session_key).first()
 
     if cart is None or not cart.items:
         return CalculateTotalResponse(
@@ -170,14 +184,10 @@ async def calculate_total(
             item_count=0,
         )
 
-    cart_items_schema = [
-        CartItemSchema(**item) for item in cart.items
-    ]
-
     return CalculateTotalResponse(
         success=True,
         message="Cart total calculated",
-        cart_items=cart_items_schema,
+        cart_items=[CartItemSchema(**item) for item in cart.items],
         total_amount=cart.total_amount,
         item_count=sum(item.get("quantity", 0) for item in cart.items),
     )
@@ -186,21 +196,21 @@ async def calculate_total(
 @router.post("/remove_from_cart", response_model=CartResponse)
 async def remove_from_cart(
     request: RemoveFromCartRequest,
+    raw_request: Request,
     db: Session = Depends(get_db),
 ):
     """Remove an item from the cart by name and optional variation."""
-    logger.info(
-        f"Removing from cart: session={request.session_id}, caller={request.caller_number}, "
-        f"item={request.item_name}, variation={request.variation}"
-    )
+    session_key = _resolve_session(raw_request, request.caller_number, request.session_id)
+
     print(f"\n==============================================")
     print(f"📞 Riya CALLED: REMOVE FROM CART")
-    print(f"📞 SESSION ID: {request.session_id}")
-    print(f"📞 CALLER NUMBER: {request.caller_number}")
+    print(f"📞 SESSION KEY: {session_key}")
+    print(f"📞 ITEM: {request.item_name}")
     print(f"==============================================\n")
 
+    logger.info(f"[CART] remove_from_cart: key={session_key}, item={request.item_name}")
 
-    cart = db.query(Cart).filter(Cart.session_id == request.session_id).first()
+    cart = db.query(Cart).filter(Cart.session_id == session_key).first()
 
     if cart is None or not cart.items:
         return CartResponse(
@@ -217,10 +227,7 @@ async def remove_from_cart(
         item for item in current_items
         if not (
             item.get("item_name", "").lower() == request.item_name.lower()
-            and (
-                request.variation is None
-                or item.get("variation") == request.variation
-            )
+            and (request.variation is None or item.get("variation") == request.variation)
         )
     ]
 

@@ -14,6 +14,7 @@ from app.schemas.cart_schema import CartItemSchema
 from app.utils.id_generator import generate_order_id
 from app.services.razorpay_service import create_payment_link
 from app.services.petpooja_service import send_to_petpooja
+from app.routers.cart import _resolve_session
 
 
 logger = logging.getLogger(__name__)
@@ -34,16 +35,15 @@ async def place_order(
     customer_phone = request.caller_number or request.customer_phone or ""
     logger.info(f"[CALLER] place_order phone={customer_phone!r}")
 
-    logger.info(
-        f"Placing order: session={request.session_id}, "
-        f"caller={request.caller_number}, type={request.order_type}"
-    )
+    # ── Resolve session key (same logic as all cart endpoints) ──
+    session_key = _resolve_session(raw_request, request.caller_number, request.session_id)
+    logger.info(f"[ORDER] place_order session_key={session_key!r}, phone={customer_phone!r}")
+
     print(f"\n==============================================")
     print(f"📞 Riya CALLED: PLACE ORDER")
-    print(f"📞 SESSION ID: {request.session_id}")
-    print(f"📞 CALLER NUMBER: {request.caller_number}")
+    print(f"📞 SESSION KEY: {session_key}")
+    print(f"📞 CUSTOMER PHONE: {customer_phone}")
     print(f"==============================================\n")
-
 
     # ── Validate order type ──
     order_type_upper = request.order_type.upper()
@@ -60,12 +60,12 @@ async def place_order(
             message="Address is required for DELIVERY orders.",
         )
 
-    # ── Get cart by session_id (UUID) ──
-    cart = db.query(Cart).filter(Cart.session_id == request.session_id).first()
+    # ── Get cart by resolved session key ──
+    cart = db.query(Cart).filter(Cart.session_id == session_key).first()
     if cart is None or not cart.items:
         return PlaceOrderResponse(
             success=False,
-            message="Cart is empty. Please add items before placing an order.",
+            message=f"Cart is empty (session: {session_key!r}). Add items before placing an order.",
         )
 
     cart_items = cart.items
