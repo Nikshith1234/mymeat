@@ -16,7 +16,8 @@ from app.schemas.cart_schema import CartItemSchema
 from app.utils.id_generator import generate_order_id
 from app.services.razorpay_service import create_payment_link
 from app.services.petpooja_service import send_to_petpooja
-from app.services.twilio_service import notify_order_placed, notify_payment_link
+from app.services.meta_whatsapp_service import send_order_confirmation
+from app.services.twilio_service import notify_payment_link
 from app.routers.cart import _resolve_session
 
 
@@ -106,8 +107,8 @@ async def place_order(
 
     logger.info(f"Order {order_id} created successfully. Total: ₹{total_amount}")
 
-    # Send WhatsApp notification
-    notify_order_placed(customer_phone)
+    # Send WhatsApp notification via Meta API (verified template)
+    send_order_confirmation(customer_phone, order_id)
 
     # Send to PetPooja POS (can be async or sync depending on implementation)
     try:

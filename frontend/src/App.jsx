@@ -116,9 +116,14 @@ export default function App() {
       
       const data = await res.json();
       if (data.payment_link_url) {
-        setPaymentLink(data.payment_link_url);
-        setProcessingOrderId(orderId);
-        setIsModalOpen(true);
+        // Automatically send the WhatsApp link since the modal is removed.
+        await fetch(`${API}/api/orders/${orderId}/send_payment_link`, {
+          method: 'POST',
+          headers: {
+            'ngrok-skip-browser-warning': 'true',
+            'Authorization': `Bearer ${token}`
+          }
+        });
       }
       // On success, backend updates to PREPARING
     } catch { /* ignore */ }
@@ -263,50 +268,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Payment Link Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <LinkIcon className="w-5 h-5 text-blue-600" /> Payment Link Generated
-              </h3>
-              <button 
-                onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6">
-              <p className="text-sm text-slate-600 mb-3 font-medium">Link to send via WhatsApp for order <strong>#{processingOrderId}</strong>:</p>
-              <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg flex items-center gap-2 mb-6 break-all">
-                <code className="text-xs text-slate-700 font-mono">{paymentLink}</code>
-              </div>
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={sendPaymentLink}
-                  disabled={sendingLink}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-lg shadow-sm transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  {sendingLink ? (
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                  {sendingLink ? 'Sending...' : 'Confirm & Send'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }

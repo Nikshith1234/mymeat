@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     TWILIO_AUTH_TOKEN: str = ""
     TWILIO_WHATSAPP_FROM: str = "+14155238886"  # Twilio sandbox default
 
+    # Meta WhatsApp API
+    META_PHONE_NUMBER_ID: str = ""
+    META_ACCESS_TOKEN: str = ""
+
     # CORS
     CORS_ORIGINS: str = '["*"]'
 
