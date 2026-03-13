@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     SIP_TRUNK_ID: str = ""
     DISPATCH_RULE_ID: str = ""
 
+    # Twilio WhatsApp
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_WHATSAPP_FROM: str = "+14155238886"  # Twilio sandbox default
+
     # CORS
     CORS_ORIGINS: str = '["*"]'
 
