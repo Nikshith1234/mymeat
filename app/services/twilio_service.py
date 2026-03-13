@@ -9,7 +9,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 # Fixed recipient number for Meatcraft notifications
-NOTIFY_NUMBER = "+919071585924"
+NOTIFY_NUMBER = "+919071584924"
 
 
 def send_whatsapp_message(message: str, to: str = NOTIFY_NUMBER) -> bool:
@@ -18,7 +18,7 @@ def send_whatsapp_message(message: str, to: str = NOTIFY_NUMBER) -> bool:
 
     Args:
         message: The text message to send.
-        to: Recipient WhatsApp number (defaults to shop owner: +919071585924).
+        to: Recipient WhatsApp number (defaults to shop owner: +919071584924).
 
     Returns:
         True if sent successfully, False otherwise.

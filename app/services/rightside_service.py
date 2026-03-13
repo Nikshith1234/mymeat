@@ -99,7 +99,7 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             "method": "POST",
             "url": f"{base}/api/add_to_cart",
             "parameters": [
-                {"name": "session_id", "type": "string", "description": "The exact CALL ID provided at the top of the system prompt. Use this exact CALL ID for EVERY tool call to track the cart. Do NOT use the phone number.", "location": "body", "required": True},
+                {"name": "session_id", "type": "string", "description": "A random 6-digit number (e.g. 582910) that you MUST generate internally at the start of the call. Use this EXACT same number for EVERY tool call to track the cart.", "location": "body", "required": True},
                 {"name": "caller_number", "type": "string", "description": "Caller's actual phone number from call metadata (e.g. +919876543210). Pass if available from metadata, otherwise omit.", "location": "body", "required": False},
                 {"name": "item_name", "type": "string", "description": "Exact name of the menu item as listed in the menu including any typos e.g. Mnutton Bone, Muttom Leg, Regular Chcicken, Fish Surmai Boneleess, FISH SINGHARA BONELESS.", "location": "body", "required": True},
                 {"name": "variation", "type": "string", "description": "Item variation e.g. 250 Grms, 500 Grms, 750 Grms, 1 Kg, Pcs. Omit only if item has no variation.", "location": "body", "required": False},
@@ -112,7 +112,7 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             "method": "POST",
             "url": f"{base}/api/remove_from_cart",
             "parameters": [
-                {"name": "session_id", "type": "string", "description": "The exact CALL ID provided at the top of the system prompt.", "location": "body", "required": True},
+                {"name": "session_id", "type": "string", "description": "The exact same random 6-digit number you generated at the start of the call.", "location": "body", "required": True},
                 {"name": "item_name", "type": "string", "description": "Exact name of the menu item to remove including any DB typos.", "location": "body", "required": True},
                 {"name": "variation", "type": "string", "description": "Variation of item to remove if applicable.", "location": "body", "required": False}
             ]
@@ -123,7 +123,7 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             "method": "POST",
             "url": f"{base}/api/calculate_total",
             "parameters": [
-                {"name": "session_id", "type": "string", "description": "The exact CALL ID provided at the top of the system prompt.", "location": "body", "required": True},
+                {"name": "session_id", "type": "string", "description": "The exact same random 6-digit number you generated at the start of the call.", "location": "body", "required": True},
                 {"name": "caller_number", "type": "string", "description": "Caller's actual phone number. Pass if available.", "location": "body", "required": False}
             ]
         },
@@ -133,7 +133,7 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             "method": "POST",
             "url": f"{base}/api/place_order",
             "parameters": [
-                {"name": "session_id", "type": "string", "description": "The exact CALL ID provided at the top of the system prompt.", "location": "body", "required": True},
+                {"name": "session_id", "type": "string", "description": "The exact same random 6-digit number you generated at the start of the call.", "location": "body", "required": True},
                 {"name": "caller_number", "type": "string", "description": "Caller's actual phone number from metadata. Pass if available, otherwise omit.", "location": "body", "required": False},
                 {"name": "customer_phone", "type": "string", "description": "Same as caller_number. Optional.", "location": "body", "required": False},
                 {"name": "customer_name", "type": "string", "description": "Customer name collected at start of call in Step 1.", "location": "body", "required": True},
@@ -164,7 +164,6 @@ async def build_rightside_payload() -> Dict[str, Any]:
     format_kwargs = {
         "current_date": now.strftime("%Y-%m-%d"),
         "caller_number": "{caller_number}",
-        "call_id": "{call_id}",
         "menu_items": menu_summary,
         "current_time": now.strftime("%H:%M"),
         "next_slot": next_slot,
