@@ -19,19 +19,31 @@ const mergeOverrides = (serverOrders) => {
 
 const TABS = [
   { key: 'pending', label: 'Pending', color: 'orange' },
+  { key: 'awaiting_payment', label: 'Awaiting Payment', color: 'yellow' },
+  { key: 'paid', label: 'Paid', color: 'purple' },
   { key: 'preparing', label: 'Started Prep', color: 'blue' },
   { key: 'ready', label: 'Ready', color: 'emerald' },
 ];
 
 const tabStyles = {
   orange: { active: 'border-orange-500 text-orange-600', badge: 'bg-orange-500', num: 'text-orange-500' },
+  yellow: { active: 'border-amber-500 text-amber-600', badge: 'bg-amber-500', num: 'text-amber-500' },
+  purple: { active: 'border-purple-500 text-purple-600', badge: 'bg-purple-500', num: 'text-purple-500' },
   blue: { active: 'border-blue-500 text-blue-600', badge: 'bg-blue-500', num: 'text-blue-500' },
   emerald: { active: 'border-emerald-500 text-emerald-600', badge: 'bg-emerald-500', num: 'text-emerald-500' },
 };
 
-const cardBorder = { pending: 'border-orange-300', preparing: 'border-blue-300', ready: 'border-emerald-300' };
+const cardBorder = { 
+  pending: 'border-orange-300', 
+  awaiting_payment: 'border-amber-300',
+  paid: 'border-purple-300',
+  preparing: 'border-blue-300', 
+  ready: 'border-emerald-300' 
+};
 const statusBadge = {
   pending: 'bg-orange-100 text-orange-700 border-orange-200',
+  awaiting_payment: 'bg-amber-100 text-amber-700 border-amber-200',
+  paid: 'bg-purple-100 text-purple-700 border-purple-200',
   preparing: 'bg-blue-100 text-blue-700 border-blue-200',
   ready: 'bg-emerald-100 text-emerald-700 border-emerald-200',
 };
@@ -100,13 +112,13 @@ export default function App() {
   };
 
   const processOrder = async (orderId) => {
-    // Moves to preparing and generates razorpay link natively backend
+    // Moves to awaiting_payment and generates razorpay link natively backend
     const overrides = loadOverrides();
-    overrides[orderId] = 'preparing';
+    overrides[orderId] = 'awaiting_payment';
     saveOverrides(overrides);
 
     setLoading(l => ({ ...l, [orderId]: true }));
-    setOrders(prev => prev.map(o => o.order_id === orderId ? { ...o, status: 'preparing' } : o));
+    setOrders(prev => prev.map(o => o.order_id === orderId ? { ...o, status: 'awaiting_payment' } : o));
 
     try {
       const res = await fetch(`${API}/api/orders/${orderId}/process`, {
@@ -145,6 +157,8 @@ export default function App() {
         setIsModalOpen(false);
         setPaymentLink('');
         setProcessingOrderId(null);
+      } else {
+        alert('Failed to send link via WhatsApp.');
       }
     } catch (e) { console.error('Error sending link:', e); }
     setSendingLink(false);
@@ -266,6 +280,51 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {/* Payment Link Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <LinkIcon className="w-5 h-5 text-blue-600" /> Payment Link Generated
+              </h3>
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-slate-600 mb-3 font-medium">Link to send via WhatsApp for order <strong>#{processingOrderId}</strong>:</p>
+              <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg flex items-center gap-2 mb-6 break-all">
+                <code className="text-xs text-slate-700 font-mono">{paymentLink}</code>
+              </div>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={sendPaymentLink}
+                  disabled={sendingLink}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-lg shadow-sm transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                  {sendingLink ? (
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  {sendingLink ? 'Sending...' : 'Confirm & Send'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -355,6 +414,18 @@ function OrderCard({ order, loading, onUpdateStatus, onProcess, onClear }) {
             <button disabled={loading} onClick={() => onProcess(order.order_id)}
               className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors active:scale-95 shadow-sm disabled:opacity-60">
               <LinkIcon className="w-3.5 h-3.5 text-white" /> Process Order
+            </button>
+          )}
+          {order.status === 'awaiting_payment' && (
+            <button disabled={loading} onClick={() => alert("Payment link already sent via WP. Await Razorpay Webhook to move this to Paid.")}
+              className="flex items-center gap-1.5 px-4 py-2 bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 text-xs font-bold rounded-lg transition-colors active:scale-95 shadow-sm disabled:opacity-60">
+              <Clock className="w-3.5 h-3.5" /> Awaiting Payment
+            </button>
+          )}
+          {order.status === 'paid' && (
+            <button disabled={loading} onClick={() => onUpdateStatus(order.order_id, 'preparing')}
+              className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg transition-colors active:scale-95 shadow-sm disabled:opacity-60">
+              <ChefHat className="w-3.5 h-3.5 text-white" /> Start Prep
             </button>
           )}
           {order.status === 'preparing' && (

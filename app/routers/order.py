@@ -229,7 +229,7 @@ async def process_order(order_id: str, db: AsyncIOMotorDatabase = Depends(get_db
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    new_status = KitchenStatus.PREPARING
+    new_status = KitchenStatus.AWAITING_PAYMENT
 
     if order.get("payment_status") == PaymentStatus.PENDING.value:
         try:

@@ -103,10 +103,14 @@ async def payment_webhook(
             "order_id": order_id,
         }
 
-    # ── Update payment status ──
+    # ── Update payment status and kitchen status ──
     await db["orders"].update_one(
         {"order_id": order_id},
-        {"$set": {"payment_status": PaymentStatus.PAID.value, "razorpay_payment_id": razorpay_payment_id}}
+        {"$set": {
+            "payment_status": PaymentStatus.PAID.value, 
+            "kitchen_status": KitchenStatus.PAID.value,
+            "razorpay_payment_id": razorpay_payment_id
+        }}
     )
     logger.info(f"Order {order_id} payment confirmed. Razorpay ID: {razorpay_payment_id}")
 

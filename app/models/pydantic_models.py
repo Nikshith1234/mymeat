@@ -23,6 +23,8 @@ class PosStatus(str, Enum):
 
 class KitchenStatus(str, Enum):
     PENDING = "pending"
+    AWAITING_PAYMENT = "awaiting_payment"
+    PAID = "paid"
     PREPARING = "preparing"
     READY = "ready"
 

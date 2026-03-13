@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     BASE_URL: str = "https://nonsciatic-fulsomely-rodney.ngrok-free.dev"
 
     # Database
-    MONGODB_URL: str = "mongodb://localhost:27017"
+    MONGODB_URL: str
     MONGODB_DB_NAME: str = "meatcraft"
 
     # JWT Config
