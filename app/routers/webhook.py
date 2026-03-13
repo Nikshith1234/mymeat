@@ -21,7 +21,7 @@ async def twilio_whatsapp_webhook(request: Request):
         return Response(content="<Response></Response>", media_type="application/xml")
         
 from app.services.razorpay_service import verify_webhook_signature
-from app.services.twilio_service import notify_order_success
+from app.services.meta_whatsapp_service import send_payment_received_message
 from app.database import get_db
 from app.models.pydantic_models import KitchenStatus, PaymentStatus
 from fastapi import Depends, HTTPException
@@ -69,7 +69,7 @@ async def razorpay_webhook(
                 
                 # Notify User
                 if customer_phone:
-                    notify_order_success(customer_phone)
+                    send_payment_received_message(customer_phone, order_id)
             else:
                 logger.warning(f"[WEBHOOK] Received payment_link.paid but no order found for link id: {payment_link_id}")
 

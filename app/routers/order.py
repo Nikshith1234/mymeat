@@ -16,8 +16,7 @@ from app.schemas.cart_schema import CartItemSchema
 from app.utils.id_generator import generate_order_id
 from app.services.razorpay_service import create_payment_link
 from app.services.petpooja_service import send_to_petpooja
-from app.services.meta_whatsapp_service import send_order_confirmation
-from app.services.twilio_service import notify_payment_link
+from app.services.meta_whatsapp_service import send_order_confirmation, send_payment_link_message
 from app.routers.cart import _resolve_session
 
 
@@ -290,7 +289,7 @@ async def send_payment_link(order_id: str, db: AsyncIOMotorDatabase = Depends(ge
         raise HTTPException(status_code=400, detail="No payment link generated for this order yet.")
 
     customer_phone = order.get("customer_phone", "")
-    success = notify_payment_link(customer_phone, payment_link_url)
+    success = send_payment_link_message(customer_phone, order_id, payment_link_url)
 
     if not success:
         raise HTTPException(status_code=500, detail="Failed to send payment link via WhatsApp.")
