@@ -194,9 +194,9 @@ async def build_rightside_payload() -> Dict[str, Any]:
             }
         },
         "vad_config": {
-            "min_silence_duration": 0.4,
+            "min_silence_duration": 0.25,
             "activation_threshold": 0.3,
-            "min_speech_duration": 0.2
+            "min_speech_duration": 0.1
         },
         "system_prompt": system_prompt,
         "tools": get_tool_definitions()
