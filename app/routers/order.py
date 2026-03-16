@@ -1,9 +1,11 @@
 """
 Order router — handles order placement from cart.
 """
+import re
 import logging
 from typing import List
 from datetime import datetime
+from unidecode import unidecode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -22,6 +24,23 @@ from app.routers.cart import _resolve_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Orders"])
+
+
+def _sanitize_customer_name(name: str) -> str:
+    """
+    Ensure customer name is in English Latin script.
+    If Devanagari or other non-ASCII characters are detected,
+    transliterate to the closest Latin equivalent using unidecode.
+    """
+    if not name:
+        return name
+    # Check if name contains any non-ASCII characters (Devanagari, etc.)
+    if any(ord(c) > 127 for c in name):
+        latin_name = unidecode(name).strip()
+        if latin_name:
+            logger.info(f"Transliterated customer name: '{name}' -> '{latin_name}'")
+            return latin_name
+    return name.strip()
 
 @router.post("/place_order", response_model=PlaceOrderResponse)
 async def place_order(
@@ -89,11 +108,14 @@ async def place_order(
         mongo_items.append(MongoOrderItem(**item))
         order_item_schemas.append(CartItemSchema(**item))
 
+    # Sanitize customer name — ensure it's in Latin script
+    sanitized_name = _sanitize_customer_name(request.customer_name)
+
     # Create Order record
     order = MongoOrder(
         order_id=order_id,
         customer_phone=customer_phone,
-        customer_name=request.customer_name,
+        customer_name=sanitized_name,
         address=request.address,
         order_type=OrderType(order_type_upper),
         arrival_time=request.arrival_time,

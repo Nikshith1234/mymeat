@@ -121,20 +121,9 @@ async def validate_item(
             matched_item = item
             break
 
-    # ── Step 2: Fuzzy fallback ─────────────────────────────────────────────
     if matched_item is None:
-        for item in items:
-            name = item.get("itemname", "")
-            if item_name.lower() in name.lower() or name.lower() in item_name.lower():
-                matched_item = item
-                logger.info(f"Fuzzy matched '{item_name}' -> '{name}'")
-                break
-
-    if matched_item is None:
-        available = [item.get("itemname", "") for item in items[:10]]
         raise ValueError(
-            f"Item '{item_name}' not found in menu. "
-            f"Some available: {', '.join(available)}"
+            f"Item '{item_name}' is not available on our menu."
         )
 
     # ── Step 3: Variation matching ─────────────────────────────────────────

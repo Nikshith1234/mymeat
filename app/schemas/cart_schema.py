@@ -52,4 +52,5 @@ class RemoveFromCartRequest(BaseModel):
     caller_number: Optional[str] = Field(None, description="Caller's actual phone number. Optional.")
     item_name: str = Field(..., description="Name of the menu item to remove")
     variation: Optional[str] = Field(None, description="Item variation")
+    quantity: Optional[str] = Field(None, description="Weight to remove, e.g. '1 Kg', '500 Grms'. If omitted, removes entire item.")
 

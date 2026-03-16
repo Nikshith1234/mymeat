@@ -116,13 +116,17 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
         },
         {
             "name": "remove_from_cart",
-            "description": "Remove a specific item from cart when customer asks to cancel or remove.",
+            "description": (
+                "Remove an item from cart — fully or partially. "
+                "If customer says 'hata do' or 'cancel' without specifying weight, omit quantity to remove the entire item. "
+                "If customer says 'remove 1 kg' or '500 grams hata do', pass quantity (e.g. '1 Kg', '500 Grms') to remove only that weight."
+            ),
             "method": "POST",
             "url": f"{base}/api/remove_from_cart",
             "parameters": [
                 {"name": "session_id", "type": "string", "description": "The exact same random 6-digit number you generated at the start of the call.", "location": "body", "required": True},
-                {"name": "item_name", "type": "string", "description": "Exact name of the menu item to remove including any DB typos.", "location": "body", "required": True},
-                {"name": "variation", "type": "string", "description": "Variation of item to remove if applicable.", "location": "body", "required": False}
+                {"name": "item_name", "type": "string", "description": "Exact name of the menu item to remove.", "location": "body", "required": True},
+                {"name": "quantity", "type": "string", "description": "Weight to remove, e.g. '1 Kg', '500 Grms'. OMIT this to remove the entire item. Pass it only when the customer wants partial removal.", "location": "body", "required": False}
             ]
         },
         {
@@ -160,7 +164,7 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                 {"name": "session_id", "type": "string", "description": "The exact same random 6-digit number you generated at the start of the call.", "location": "body", "required": True},
                 {"name": "caller_number", "type": "string", "description": "Caller's actual phone number from metadata. Pass if available, otherwise omit.", "location": "body", "required": False},
                 {"name": "customer_phone", "type": "string", "description": "Same as caller_number. Optional.", "location": "body", "required": False},
-                {"name": "customer_name", "type": "string", "description": "Customer name collected at start of call in Step 1.", "location": "body", "required": True},
+                {"name": "customer_name", "type": "string", "description": "Customer name collected at start of call in Step 1. MUST be in English Latin script (e.g., 'Nikshit', 'Rahul', 'Priya'). NEVER use Devanagari or any non-Latin script. If the STT transcribed the name in Hindi/Devanagari, transliterate it to English Latin before passing it here.", "location": "body", "required": True},
                 {"name": "order_type", "type": "string", "description": "Must be exactly DELIVERY or PICKUP.", "location": "body", "required": True},
                 {"name": "address", "type": "string", "description": "Full delivery address. Only when order_type is DELIVERY.", "location": "body", "required": False},
                 {"name": "arrival_time", "type": "string", "description": "Expected pickup time. Only when order_type is PICKUP.", "location": "body", "required": False}

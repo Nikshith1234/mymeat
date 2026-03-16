@@ -91,6 +91,93 @@ def _recalculate_total(items: list) -> float:
     return sum(item.get("final_price", 0) for item in items)
 
 
+def _variation_to_grams(variation: str) -> int:
+    """Convert a variation string like '1 Kg', '500 Grms' to grams. Returns 0 if not weight-based."""
+    if not variation:
+        return 0
+    v = variation.strip().lower()
+    if "kg" in v:
+        try:
+            num = float(v.replace("kg", "").strip())
+            return int(num * 1000)
+        except ValueError:
+            return 0
+    if "grms" in v or "grams" in v:
+        try:
+            num = float(v.replace("grms", "").replace("grams", "").strip())
+            return int(num)
+        except ValueError:
+            return 0
+    return 0
+
+
+def _consolidate_cart_items(items: list) -> list:
+    """
+    Group cart items by item_name, combine variations into total weight.
+    Returns a single entry per item with human-readable combined weight.
+    e.g., [1Kg qty=2, 500Grms qty=1] -> [2.5 Kg, combined price]
+    """
+    from collections import OrderedDict
+    grouped: OrderedDict = OrderedDict()
+
+    for item in items:
+        name = item.get("item_name", "")
+        var = item.get("variation", "") or ""
+        qty = item.get("quantity", 1)
+        grams = _variation_to_grams(var)
+
+        if name not in grouped:
+            grouped[name] = {
+                "item_name": name,
+                "total_grams": 0,
+                "total_qty": 0,
+                "final_price": 0.0,
+                "is_weight_based": False,
+                "variation": var,
+            }
+        g = grouped[name]
+
+        if grams > 0:
+            # Weight-based item (meat)
+            g["is_weight_based"] = True
+            g["total_grams"] += grams * qty
+            g["final_price"] += item.get("final_price", 0)
+        else:
+            # Piece/packet based (masale)
+            g["total_qty"] += qty
+            g["final_price"] += item.get("final_price", 0)
+            g["variation"] = var or "Pcs"
+
+    result = []
+    for g in grouped.values():
+        if g["is_weight_based"]:
+            total_g = g["total_grams"]
+            if total_g >= 1000:
+                kg = total_g / 1000
+                if kg == int(kg):
+                    variation_str = f"{int(kg)} Kg"
+                else:
+                    variation_str = f"{kg} Kg"
+            else:
+                variation_str = f"{total_g} Grms"
+            result.append(CartItemSchema(
+                item_name=g["item_name"],
+                variation=variation_str,
+                quantity=1,
+                price=g["final_price"],
+                final_price=g["final_price"],
+            ))
+        else:
+            result.append(CartItemSchema(
+                item_name=g["item_name"],
+                variation=g["variation"],
+                quantity=g["total_qty"],
+                price=round(g["final_price"] / max(g["total_qty"], 1), 2),
+                final_price=g["final_price"],
+            ))
+    return result
+
+
 @router.post("/add_to_cart", response_model=CartResponse)
 async def add_to_cart(
     request: AddToCartRequest,
@@ -156,10 +243,11 @@ async def add_to_cart(
         {"$set": {"items": cart["items"], "total_amount": cart["total_amount"], "updated_at": cart["updated_at"]}}
     )
 
+    consolidated = _consolidate_cart_items(current_items)
     return CartResponse(
         success=True,
         message=f"'{item_info['item_name']}' added to cart successfully",
-        cart_items=[CartItemSchema(**item) for item in current_items],
+        cart_items=consolidated,
         cart_total=cart["total_amount"],
     )
 
@@ -191,12 +279,13 @@ async def calculate_total(
             item_count=0,
         )
 
+    consolidated = _consolidate_cart_items(cart["items"])
     return CalculateTotalResponse(
         success=True,
         message="Cart total calculated",
-        cart_items=[CartItemSchema(**item) for item in cart["items"]],
+        cart_items=consolidated,
         total_amount=cart.get("total_amount", 0.0),
-        item_count=sum(item.get("quantity", 0) for item in cart["items"]),
+        item_count=len(consolidated),
     )
 
 
@@ -206,16 +295,16 @@ async def remove_from_cart(
     raw_request: Request,
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    """Remove an item from the cart by name and optional variation."""
+    """Remove an item (fully or partially) from the cart."""
     session_key = _resolve_session(raw_request, request.caller_number, request.session_id)
 
     print(f"\n==============================================")
     print(f"📞 Riya CALLED: REMOVE FROM CART")
     print(f"📞 SESSION KEY: {session_key}")
-    print(f"📞 ITEM: {request.item_name}")
+    print(f"📞 ITEM: {request.item_name} | QTY TO REMOVE: {request.quantity}")
     print(f"==============================================\n")
 
-    logger.info(f"[CART] remove_from_cart: key={session_key}, item={request.item_name}")
+    logger.info(f"[CART] remove_from_cart: key={session_key}, item={request.item_name}, qty={request.quantity}")
 
     cart = await db["carts"].find_one({"session_id": session_key})
 
@@ -228,36 +317,94 @@ async def remove_from_cart(
         )
 
     current_items = list(cart["items"])
-    original_len = len(current_items)
 
-    current_items = [
-        item for item in current_items
-        if not (
-            item.get("item_name", "").lower() == request.item_name.lower()
-            and (request.variation is None or item.get("variation") == request.variation)
-        )
+    # Find all entries for this item
+    matching_indices = [
+        i for i, item in enumerate(current_items)
+        if item.get("item_name", "").lower() == request.item_name.lower()
     ]
 
-    if len(current_items) == original_len:
+    if not matching_indices:
         return CartResponse(
             success=False,
             message=f"Item '{request.item_name}' not found in cart",
-            cart_items=[CartItemSchema(**i) for i in current_items],
+            cart_items=_consolidate_cart_items(current_items),
             cart_total=cart.get("total_amount", 0.0),
         )
+
+    # If no quantity specified → remove ALL entries of this item
+    if not request.quantity:
+        current_items = [item for i, item in enumerate(current_items) if i not in matching_indices]
+        msg = f"'{request.item_name}' completely removed from cart"
+    else:
+        # Partial removal — remove the specified weight
+        grams_to_remove = _variation_to_grams(request.quantity)
+
+        if grams_to_remove <= 0:
+            # Non-weight quantity (e.g., packet count for masale)
+            try:
+                qty_to_remove = int(re.sub(r'[^0-9]', '', request.quantity) or '1')
+            except ValueError:
+                qty_to_remove = 1
+            for idx in matching_indices:
+                item = current_items[idx]
+                if item["quantity"] > qty_to_remove:
+                    item["quantity"] -= qty_to_remove
+                    item["final_price"] = item["quantity"] * item["price"]
+                    break
+                else:
+                    current_items[idx] = None  # Mark for removal
+                    break
+            current_items = [i for i in current_items if i is not None]
+            msg = f"{request.quantity} of '{request.item_name}' removed from cart"
+        else:
+            # Weight-based partial removal
+            remaining_to_remove = grams_to_remove
+            # Process entries from smallest variation to largest (remove small packs first)
+            sorted_indices = sorted(
+                matching_indices,
+                key=lambda idx: _variation_to_grams(current_items[idx].get("variation", ""))
+            )
+
+            for idx in sorted_indices:
+                if remaining_to_remove <= 0:
+                    break
+                item = current_items[idx]
+                item_grams = _variation_to_grams(item.get("variation", ""))
+                if item_grams <= 0:
+                    continue
+                total_item_grams = item_grams * item["quantity"]
+
+                if total_item_grams <= remaining_to_remove:
+                    # Remove this entire entry
+                    remaining_to_remove -= total_item_grams
+                    current_items[idx] = None  # Mark for removal
+                else:
+                    # Reduce quantity
+                    units_to_remove = remaining_to_remove // item_grams
+                    if units_to_remove > 0:
+                        item["quantity"] -= units_to_remove
+                        item["final_price"] = item["quantity"] * item["price"]
+                        remaining_to_remove -= units_to_remove * item_grams
+                    remaining_to_remove = 0
+
+            current_items = [i for i in current_items if i is not None]
+            msg = f"{request.quantity} of '{request.item_name}' removed from cart"
 
     cart["items"] = current_items
     cart["total_amount"] = _recalculate_total(current_items)
     cart["updated_at"] = datetime.utcnow()
-    
+
     await db["carts"].update_one(
         {"session_id": session_key},
         {"$set": {"items": cart["items"], "total_amount": cart["total_amount"], "updated_at": cart["updated_at"]}}
     )
 
+    consolidated = _consolidate_cart_items(current_items)
     return CartResponse(
         success=True,
-        message=f"'{request.item_name}' removed from cart",
-        cart_items=[CartItemSchema(**i) for i in current_items],
+        message=msg,
+        cart_items=consolidated,
         cart_total=cart["total_amount"],
     )
+
