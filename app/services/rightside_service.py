@@ -200,6 +200,7 @@ async def build_rightside_payload() -> Dict[str, Any]:
 
     return {
         "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
+        "language": "hi",
         "voice": "faf0731e-dfb9-4cfc-8119-259a79b27e12",
         "stt_config": {
             "provider": "deepgram",
