@@ -188,3 +188,102 @@ def invalidate_cache():
     _menu_cache = None
     _menu_cache_timestamp = 0.0
     logger.info("Menu cache invalidated")
+
+
+def _variation_grams(var_name: str) -> int:
+    """
+    Parse grams from a variation name like '1 Kg', '500 Grms', '250 Grms'.
+    Returns 0 for non-weight variations (e.g., 'Pcs').
+    Uses purely integer arithmetic to avoid float precision issues.
+    """
+    v = var_name.strip().lower()
+    if "kg" in v:
+        try:
+            # Parse as float then convert to integer grams
+            num_str = v.replace("kg", "").strip()
+            # Multiply by 1000 carefully: parse integer and decimal parts separately
+            if "." in num_str:
+                int_part, dec_part = num_str.split(".", 1)
+                dec_part = dec_part[:3].ljust(3, "0")  # pad to 3 decimal places
+                return int(int_part) * 1000 + int(dec_part)
+            else:
+                return int(num_str) * 1000
+        except (ValueError, AttributeError):
+            return 0
+    if "grms" in v or "grams" in v or "gm" in v:
+        try:
+            num_str = v.replace("grms", "").replace("grams", "").replace("gm", "").strip()
+            return int(float(num_str))
+        except (ValueError, AttributeError):
+            return 0
+    return 0
+
+
+async def get_item_price_per_gram(item_name: str) -> dict:
+    """
+    Calculate the per-gram price for a weight-based menu item.
+
+    Uses the largest weight-based variation as the reference to ensure
+    the most representative per-gram rate (avoids rounding artifacts in
+    small-pack prices).
+
+    Returns a dict:
+    {
+        "price_per_gram": float,       # rupees per gram (high precision)
+        "price_per_kg": float,         # price_per_gram * 1000 (easier for AI)
+        "reference_variation": str,    # variation used for calculation
+        "variations": [                # all weight-based variations
+            {"name": str, "price": float, "grams": int, "price_per_gram": float}
+        ]
+    }
+
+    Raises ValueError if item not found or has no weight-based variations.
+    """
+    menu_data = await get_menu()
+    items = menu_data.get("items", [])
+
+    # Find the item (case-insensitive)
+    matched_item = None
+    for item in items:
+        if item.get("itemname", "").lower() == item_name.lower():
+            matched_item = item
+            break
+
+    if matched_item is None:
+        raise ValueError(f"Item '{item_name}' not found in menu.")
+
+    variations = matched_item.get("variation", [])
+    weight_variations = []
+
+    for var in variations:
+        name = var.get("name", "")
+        price = float(var.get("price", 0))
+        grams = _variation_grams(name)
+        if grams > 0 and price > 0:
+            weight_variations.append({
+                "name": name,
+                "price": price,
+                "grams": grams,
+                "price_per_gram": price / grams,
+            })
+
+    if not weight_variations:
+        raise ValueError(f"Item '{item_name}' has no weight-based variations (only piece/packet variants).")
+
+    # Select the reference variation: largest grams (most accurate per-gram rate)
+    reference = max(weight_variations, key=lambda v: v["grams"])
+
+    price_per_gram = reference["price"] / reference["grams"]
+
+    logger.info(
+        f"[PRICE] '{item_name}' — reference: {reference['name']} @ ₹{reference['price']} "
+        f"/ {reference['grams']}g = ₹{price_per_gram:.6f}/g"
+    )
+
+    return {
+        "price_per_gram": price_per_gram,
+        "price_per_kg": price_per_gram * 1000,
+        "reference_variation": reference["name"],
+        "variations": weight_variations,
+    }
+

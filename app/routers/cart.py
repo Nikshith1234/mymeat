@@ -11,6 +11,7 @@ SESSION DESIGN:
   The same caller phone = same cart throughout the entire call.
 """
 import re
+import math
 import logging
 from typing import Optional
 
@@ -25,8 +26,11 @@ from app.schemas.cart_schema import (
     CalculateTotalResponse,
     CartItemSchema,
     RemoveFromCartRequest,
+    GetItemPriceRequest,
+    GetItemPriceResponse,
+    VariationPriceInfo,
 )
-from app.services.menu_service import validate_item
+from app.services.menu_service import validate_item, get_item_price_per_gram
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -186,18 +190,97 @@ async def add_to_cart(
 ):
     """
     Add an item to the cart.
-    Cart session is resolved server-side from caller identity — AI does not need to track this.
+    Supports two modes:
+      - Standard: pass variation + quantity (exact menu variation name).
+      - Custom weight: pass custom_weight_kg (e.g. 4.2) — price is calculated
+        proportionally from the item's per-gram rate. No variation/quantity needed.
     """
     session_key = _resolve_session(raw_request, request.caller_number, request.session_id)
 
     print(f"\n==============================================")
     print(f"📞 Riya CALLED: ADD TO CART")
     print(f"📞 SESSION KEY: {session_key}")
-    print(f"📞 ITEM: {request.item_name} | VARIATION: {request.variation} | QTY: {request.quantity}")
+    print(f"📞 ITEM: {request.item_name} | VARIATION: {request.variation} | QTY: {request.quantity} | CUSTOM_KG: {request.custom_weight_kg}")
     print(f"==============================================\n")
 
-    logger.info(f"[CART] add_to_cart: key={session_key}, item={request.item_name}, var={request.variation}, qty={request.quantity}")
+    logger.info(
+        f"[CART] add_to_cart: key={session_key}, item={request.item_name}, "
+        f"var={request.variation}, qty={request.quantity}, custom_kg={request.custom_weight_kg}"
+    )
 
+    # ── CUSTOM WEIGHT MODE ────────────────────────────────────────────────────
+    if request.custom_weight_kg is not None:
+        try:
+            price_info = await get_item_price_per_gram(request.item_name)
+        except ValueError as e:
+            logger.warning(f"Custom weight price lookup failed: {e}")
+            return CartResponse(success=False, message=str(e), cart_items=[], cart_total=0.0)
+        except Exception as e:
+            logger.error(f"Menu service error during custom weight lookup: {e}")
+            raise HTTPException(status_code=503, detail="Menu service unavailable")
+
+        price_per_gram: float = price_info["price_per_gram"]
+        weight_kg: float = request.custom_weight_kg
+        weight_grams: float = weight_kg * 1000
+
+        # Exact price rounded to 2 decimal places
+        exact_price = round(price_per_gram * weight_grams, 2)
+
+        # Human-readable variation label (e.g. "4.2 Kg", "500.0 Grms")
+        if weight_kg >= 1:
+            # Format: drop trailing zeros (4.2 Kg, not 4.20 Kg)
+            kg_str = f"{weight_kg:.3f}".rstrip("0").rstrip(".")
+            variation_label = f"{kg_str} Kg"
+        else:
+            grams_int = int(round(weight_grams))
+            variation_label = f"{grams_int} Grms"
+
+        cart = await _get_or_create_cart(db, session_key)
+        current_items = list(cart.get("items", []))
+
+        # Check for duplicate custom-weight entry for same item
+        found = False
+        for existing_item in current_items:
+            if (
+                existing_item.get("item_name", "").lower() == request.item_name.lower()
+                and existing_item.get("variation") == variation_label
+            ):
+                # Accumulate: double the weight and double the price
+                existing_item["quantity"] += 1
+                existing_item["final_price"] = round(existing_item["price"] * existing_item["quantity"], 2)
+                found = True
+                break
+
+        if not found:
+            new_item = {
+                "item_name": request.item_name,
+                "variation": variation_label,
+                "quantity": 1,
+                "price": exact_price,
+                "final_price": exact_price,
+                "is_custom_weight": True,
+            }
+            current_items.append(new_item)
+            logger.info(f"[CART CUSTOM] Added '{request.item_name}' @ {variation_label} for ₹{exact_price}")
+
+        cart["items"] = current_items
+        cart["total_amount"] = _recalculate_total(current_items)
+        cart["updated_at"] = datetime.utcnow()
+
+        await db["carts"].update_one(
+            {"session_id": session_key},
+            {"$set": {"items": cart["items"], "total_amount": cart["total_amount"], "updated_at": cart["updated_at"]}}
+        )
+
+        consolidated = _consolidate_cart_items(current_items)
+        return CartResponse(
+            success=True,
+            message=f"'{request.item_name}' ({variation_label}) added to cart — ₹{exact_price}",
+            cart_items=consolidated,
+            cart_total=cart["total_amount"],
+        )
+
+    # ── STANDARD VARIATION MODE ───────────────────────────────────────────────
     try:
         item_info = await validate_item(request.item_name, request.variation)
     except ValueError as e:
@@ -250,6 +333,7 @@ async def add_to_cart(
         cart_items=consolidated,
         cart_total=cart["total_amount"],
     )
+
 
 
 @router.post("/calculate_total", response_model=CalculateTotalResponse)
@@ -406,5 +490,118 @@ async def remove_from_cart(
         message=msg,
         cart_items=consolidated,
         cart_total=cart["total_amount"],
+    )
+
+
+@router.post("/get_item_price", response_model=GetItemPriceResponse)
+async def get_item_price(request: GetItemPriceRequest):
+    """
+    Returns the price-per-gram for a weight-based menu item.
+
+    Use cases:
+    - Custom weight: Ask for price_per_gram, compute price = weight_kg * 1000 * price_per_gram,
+      then call add_to_cart with custom_weight_kg.
+    - Budget-based: Pass budget (rupees) to get max_weight_kg and actual_cost.
+      The response also contains custom_weight_kg_to_add — pass it directly to add_to_cart.
+    """
+    print(f"\n==============================================")
+    print(f"📞 Riya CALLED: GET ITEM PRICE")
+    print(f"📞 ITEM: {request.item_name} | BUDGET: {request.budget}")
+    print(f"==============================================\n")
+
+    try:
+        price_info = await get_item_price_per_gram(request.item_name)
+    except ValueError as e:
+        logger.warning(f"[PRICE] {e}")
+        return GetItemPriceResponse(
+            success=False,
+            item_name=request.item_name,
+            message=str(e),
+        )
+    except Exception as e:
+        logger.error(f"[PRICE] Unexpected error: {e}")
+        raise HTTPException(status_code=503, detail="Menu service unavailable")
+
+    price_per_gram: float = price_info["price_per_gram"]
+    price_per_kg: float = price_info["price_per_kg"]
+
+    # Build variation list for the response
+    variations_out = [
+        VariationPriceInfo(
+            name=v["name"],
+            price=v["price"],
+            grams=v["grams"],
+            price_per_gram=round(v["price_per_gram"], 6),
+        )
+        for v in price_info["variations"]
+    ]
+
+    # ── Budget calculation ──────────────────────────────────────────────────────
+    if request.budget is not None:
+        budget = request.budget
+        # max grams = floor(budget / price_per_gram)
+        # Avoid floating point: multiply budget by 1e6 and price by 1e6 to get integer ratio
+        # Then floor divide
+        max_grams = int(budget / price_per_gram)  # floor via int()
+        if max_grams <= 0:
+            # Budget too small even for 1 gram
+            min_variation = min(price_info["variations"], key=lambda v: v["grams"])
+            return GetItemPriceResponse(
+                success=False,
+                item_name=request.item_name,
+                price_per_gram=round(price_per_gram, 6),
+                price_per_kg=round(price_per_kg, 2),
+                variations=variations_out,
+                budget=budget,
+                message=(
+                    f"Budget \u20b9{budget:.0f} is too small. "
+                    f"Minimum is {min_variation['name']} at \u20b9{min_variation['price']:.0f}."
+                ),
+            )
+
+        actual_cost = round(price_per_gram * max_grams, 2)
+        max_weight_kg = max_grams / 1000.0
+
+        # Human-readable weight string
+        if max_grams >= 1000:
+            kg_val = max_grams / 1000.0
+            kg_str = f"{kg_val:.3f}".rstrip("0").rstrip(".")
+            human = f"{kg_str} Kg"
+        else:
+            human = f"{max_grams} Grms"
+
+        logger.info(
+            f"[PRICE BUDGET] '{request.item_name}' budget=\u20b9{budget} "
+            f"\u2192 {max_grams}g = {human} @ \u20b9{actual_cost}"
+        )
+
+        return GetItemPriceResponse(
+            success=True,
+            item_name=request.item_name,
+            price_per_gram=round(price_per_gram, 6),
+            price_per_kg=round(price_per_kg, 2),
+            variations=variations_out,
+            budget=budget,
+            max_weight_grams=max_grams,
+            max_weight_kg=round(max_weight_kg, 4),
+            max_weight_human=human,
+            actual_cost=actual_cost,
+            custom_weight_kg_to_add=round(max_weight_kg, 4),
+            message=(
+                f"\u20b9{budget:.0f} mein {human} milega \u2014 actual cost \u20b9{actual_cost:.2f}."
+            ),
+        )
+
+    # ── Price info only (no budget) ─────────────────────────────────────────────
+    return GetItemPriceResponse(
+        success=True,
+        item_name=request.item_name,
+        price_per_gram=round(price_per_gram, 6),
+        price_per_kg=round(price_per_kg, 2),
+        variations=variations_out,
+        message=(
+            f"Price per gram: \u20b9{price_per_gram:.4f}. "
+            f"Price per kg: \u20b9{price_per_kg:.2f}."
+        ),
     )
 

@@ -100,18 +100,21 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                 "CRITICAL RULES: "
                 "(1) item_name MUST be an EXACT character-for-character match from the MENU. "
                 "NEVER translate or substitute similar items (e.g., if customer says 'Mutton Keema' but menu has 'Mutton Mince', do NOT use 'Mutton Mince' — tell the customer it's not available and offer alternatives). "
-                "(2) ALL THREE slots must be EXPLICITLY confirmed by the customer: item_name, variation, quantity. "
-                "(3) The customer must have seen the FULL order summary (item + variation + price) before saying yes. "
-                "If ANY slot is assumed or unconfirmed, ask a NEUTRAL clarification question instead."
+                "(2) TWO MODES — choose ONE: "
+                "  MODE A (standard): Pass variation (exact menu size like '500 Grms', '1 Kg') + quantity (integer). Use when customer asks for a standard pack size. "
+                "  MODE B (custom weight): Pass custom_weight_kg (float, e.g. 4.2 or 0.75) ONLY. Do NOT pass variation or quantity. Use when the customer requests a non-standard weight like 4.2 kg or 750 grams. The backend computes the exact proportional price. "
+                "(3) For MODE B, first call get_item_price (without budget) to get price_per_kg, compute price = custom_weight_kg * price_per_kg, confirm with customer, then call add_to_cart with custom_weight_kg. "
+                "(4) ALL slots must be EXPLICITLY confirmed by the customer before calling this tool."
             ),
             "method": "POST",
             "url": f"{base}/api/add_to_cart",
             "parameters": [
                 {"name": "session_id", "type": "string", "description": "A random 6-digit number (e.g. 582910) that you MUST generate internally at the start of the call. Use this EXACT same number for EVERY tool call to track the cart.", "location": "body", "required": True},
                 {"name": "caller_number", "type": "string", "description": "Caller's actual phone number from call metadata (e.g. +919876543210). Pass if available from metadata, otherwise omit.", "location": "body", "required": False},
-                {"name": "item_name", "type": "string", "description": "The EXACT item name as it appears in the MENU — character for character, no translation, no paraphrasing. If the customer's request does not exactly match any menu item name, do NOT call this tool. Instead tell the customer the item is not available.", "location": "body", "required": True},
-                {"name": "variation", "type": "string", "description": "Item variation e.g. 250 Grms, 500 Grms, 750 Grms, 1 Kg, Pcs. Omit only if item has no variation.", "location": "body", "required": False},
-                {"name": "quantity", "type": "integer", "description": "Number of units. Default is 1.", "location": "body", "required": False}
+                {"name": "item_name", "type": "string", "description": "The EXACT item name as it appears in the MENU — character for character, no translation, no paraphrasing.", "location": "body", "required": True},
+                {"name": "variation", "type": "string", "description": "[MODE A only] Item variation e.g. '250 Grms', '500 Grms', '1 Kg', 'Pcs'. Omit in MODE B (custom_weight_kg) and for items with no variation.", "location": "body", "required": False},
+                {"name": "quantity", "type": "integer", "description": "[MODE A only] Number of units of the specified variation. Default is 1. Omit in MODE B.", "location": "body", "required": False},
+                {"name": "custom_weight_kg", "type": "number", "description": "[MODE B only] The exact weight in kilograms the customer wants (e.g. 4.2, 0.75, 3.214). The backend calculates the exact price proportionally. Do NOT use if customer asked for a standard menu variation size. Pass ONLY this field (not variation/quantity) for custom weights.", "location": "body", "required": False}
             ]
         },
         {
@@ -168,6 +171,31 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                 {"name": "order_type", "type": "string", "description": "Must be exactly DELIVERY or PICKUP.", "location": "body", "required": True},
                 {"name": "address", "type": "string", "description": "Full delivery address. Only when order_type is DELIVERY.", "location": "body", "required": False},
                 {"name": "arrival_time", "type": "string", "description": "Expected pickup time. Only when order_type is PICKUP.", "location": "body", "required": False}
+            ]
+        },
+        {
+            "name": "get_item_price",
+            "description": (
+                "Look up pricing for a weight-based menu item. TWO USE CASES: "
+                "USE CASE 1 (custom weight, e.g. '4.2 kg ka price kya hai' or customer requests non-standard weight): "
+                "  Call with item_name only (no budget). Response gives price_per_kg. "
+                "  Compute total price = custom_weight_kg * price_per_kg. "
+                "  Confirm with customer: '[weight] kg [item] — [price] Rupees. Add kar doon?' "
+                "  On confirmation, call add_to_cart with item_name + custom_weight_kg (NOT variation/quantity). "
+                "USE CASE 2 (budget-based, e.g. '300 rupees ka chicken chahiye'): "
+                "  Call with item_name AND budget (rupees, as a number). "
+                "  Response gives max_weight_human (e.g. '750 Grms') and actual_cost. "
+                "  Also gives custom_weight_kg_to_add — use this directly in add_to_cart. "
+                "  Confirm: '[budget] Rupees mein [max_weight_human] milega — [actual_cost] Rupees. Add kar doon?' "
+                "  On confirmation, call add_to_cart with item_name + custom_weight_kg=custom_weight_kg_to_add. "
+                "Do NOT call this for standard menu variations (500 Grms, 1 Kg etc.) — those have known prices."
+            ),
+            "method": "POST",
+            "url": f"{base}/api/get_item_price",
+            "parameters": [
+                {"name": "session_id", "type": "string", "description": "Your 6-digit session code.", "location": "body", "required": True},
+                {"name": "item_name", "type": "string", "description": "Exact menu item name to look up.", "location": "body", "required": True},
+                {"name": "budget", "type": "number", "description": "Customer's budget in rupees. Pass ONLY for budget-based ordering (e.g. '300 rupees ka de do'). Omit for custom weight queries.", "location": "body", "required": False}
             ]
         }
     ]

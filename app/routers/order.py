@@ -17,7 +17,6 @@ from app.schemas.order_schema import PlaceOrderRequest, PlaceOrderResponse, Orde
 from app.schemas.cart_schema import CartItemSchema
 from app.utils.id_generator import generate_order_id
 from app.services.razorpay_service import create_payment_link
-from app.services.petpooja_service import send_to_petpooja
 from app.services.meta_whatsapp_service import send_order_confirmation, send_payment_link_message
 from app.routers.cart import _resolve_session
 
@@ -137,33 +136,12 @@ async def place_order(
 
     logger.info(f"Order {order_id} created successfully. Total: ₹{total_amount}")
 
-    # Send WhatsApp notification via Meta API (verified template)
+    # Send WhatsApp order confirmation
     send_order_confirmation(customer_phone, order_id)
 
-    # Send to PetPooja POS (can be async or sync depending on implementation)
-    try:
-        class DummyOrderObj: pass
-        dummy_order = DummyOrderObj()
-        for k, v in order_dict.items():
-            setattr(dummy_order, k, v)
-        
-        class DummyItemObj: pass
-        dummy_items = []
-        for i in mongo_items:
-            d_i = DummyItemObj()
-            for k, v in i.model_dump().items():
-                setattr(d_i, k, v)
-            dummy_items.append(d_i)
-
-        success = await send_to_petpooja(dummy_order, dummy_items)
-        if success:
-            await db["orders"].update_one(
-                {"order_id": order_id},
-                {"$set": {"pos_status": PosStatus.SENT.value}}
-            )
-    except Exception as e:
-        logger.error(f"PetPooja send failed for {order_id}: {e}")
-        await db["orders"].update_one({"order_id": order_id}, {"$set": {"pos_status": PosStatus.FAILED.value}})
+    # NOTE: PetPooja POS push happens ONLY in the payment webhook
+    # (payment.py → payment_webhook) after payment is confirmed.
+    # We do NOT send to PetPooja here to avoid pushing unpaid orders.
 
     return PlaceOrderResponse(
         success=True,
