@@ -76,6 +76,11 @@ class GetItemPriceRequest(BaseModel):
         gt=0,
         description="Customer's budget in rupees. When provided, the response includes the maximum weight that can be purchased within this budget.",
     )
+    custom_weight_kg: Optional[float] = Field(
+        None,
+        gt=0,
+        description="Customer's requested weight in kg (e.g. 3.3, 0.75). When provided, the response includes the computed total price.",
+    )
 
 
 class VariationPriceInfo(BaseModel):
@@ -93,6 +98,9 @@ class GetItemPriceResponse(BaseModel):
     price_per_gram: float = 0.0          # rupees per gram (from reference variation)
     price_per_kg: float = 0.0            # price_per_gram * 1000 — easier for AI to use
     variations: List[VariationPriceInfo] = []
+    # Custom weight fields — populated when custom_weight_kg is provided
+    custom_weight_kg: Optional[float] = None
+    computed_total_price: Optional[float] = None  # server-computed total = weight_kg * price_per_kg
     # Budget fields — only populated when `budget` is provided
     budget: Optional[float] = None
     max_weight_grams: Optional[int] = None

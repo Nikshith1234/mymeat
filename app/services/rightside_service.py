@@ -176,25 +176,28 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
         {
             "name": "get_item_price",
             "description": (
-                "Look up pricing for a weight-based menu item. TWO USE CASES: "
-                "USE CASE 1 (custom weight, e.g. '4.2 kg ka price kya hai' or customer requests non-standard weight): "
-                "  Call with item_name only (no budget). Response gives price_per_kg. "
-                "  Compute total price = custom_weight_kg * price_per_kg. "
-                "  Confirm with customer: '[weight] kg [item] — [price] Rupees. Add kar doon?' "
-                "  On confirmation, call add_to_cart with item_name + custom_weight_kg (NOT variation/quantity). "
-                "USE CASE 2 (budget-based, e.g. '300 rupees ka chicken chahiye'): "
+                "Look up pricing for a menu item and get the server-computed total price. THREE USE CASES: "
+                "USE CASE 1 (custom weight, e.g. '3.3 kg mutton boneless'): "
+                "  Call with item_name AND custom_weight_kg. Response gives computed_total_price (server-computed). "
+                "  Confirm with customer: '[weight] kg [item] — [computed_total_price] Rupees. Add kar doon?' "
+                "  On confirmation, call add_to_cart with custom_weight_kg_to_add (from the response). "
+                "  NEVER compute the price yourself. ALWAYS use computed_total_price from the response. "
+                "USE CASE 2 (budget-based, e.g. '300 rupees ka chicken'): "
                 "  Call with item_name AND budget (rupees, as a number). "
-                "  Response gives max_weight_human (e.g. '750 Grms') and actual_cost. "
-                "  Also gives custom_weight_kg_to_add — use this directly in add_to_cart. "
-                "  Confirm: '[budget] Rupees mein [max_weight_human] milega — [actual_cost] Rupees. Add kar doon?' "
-                "  On confirmation, call add_to_cart with item_name + custom_weight_kg=custom_weight_kg_to_add. "
-                "Do NOT call this for standard menu variations (500 Grms, 1 Kg etc.) — those have known prices."
+                "  Response gives max_weight_human and actual_cost. "
+                "  On confirmation, call add_to_cart with custom_weight_kg=custom_weight_kg_to_add. "
+                "USE CASE 3 (price inquiry, e.g. 'mutton boneless ka rate kya hai'): "
+                "  Call with item_name only. Response gives price_per_kg and variation details. "
+                "CRITICAL: For ANY non-standard weight (3.3 kg, 2.5 kg, 750 grams, etc.), "
+                "ALWAYS call this tool with custom_weight_kg FIRST, use the computed_total_price, "
+                "and NEVER try to calculate the price yourself."
             ),
             "method": "POST",
             "url": f"{base}/api/get_item_price",
             "parameters": [
                 {"name": "session_id", "type": "string", "description": "Your 6-digit session code.", "location": "body", "required": True},
                 {"name": "item_name", "type": "string", "description": "Exact menu item name to look up.", "location": "body", "required": True},
+                {"name": "custom_weight_kg", "type": "number", "description": "Customer's requested weight in kilograms (e.g. 3.3, 0.75, 2.5). Pass this for ANY non-standard weight request. Server computes the total price — you MUST use the returned computed_total_price and NEVER calculate it yourself.", "location": "body", "required": False},
                 {"name": "budget", "type": "number", "description": "Customer's budget in rupees. Pass ONLY for budget-based ordering (e.g. '300 rupees ka de do'). Omit for custom weight queries.", "location": "body", "required": False}
             ]
         }
@@ -236,6 +239,7 @@ async def build_rightside_payload(caller_number: str = "") -> Dict[str, Any]:
         "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
         "language": "hi",
         "voice": "faf0731e-dfb9-4cfc-8119-259a79b27e12",
+        "first_message": "Meatcraft में आपका स्वागत है। मैं Riya हूँ, आपका AI assistant। मैं आपका Mutton, Chicken, और Seafood का order place करने में मदद कर सकती हूँ। सबसे पहले, आपका नाम क्या है और आपको क्या order करना है?",
         "stt_config": {
             "provider": "deepgram",
             "config": {

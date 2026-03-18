@@ -109,22 +109,59 @@ async def validate_item(
     """
     Validate an item exists in the menu and return its price info.
     Menu fields: itemname, variation (array), variation[].name, variation[].price
+
+    Matching strategy:
+      1. Exact match (case-insensitive)
+      2. Partial/substring match — customer's query appears in menu item name
+         - 1 match  → use it automatically
+         - N matches → raise ValueError listing suggestions so agent can ask
+      3. No match at all → raise ValueError "not in menu"
     """
     menu_data = await get_menu()
     items = menu_data.get("items", [])
 
+    # Only consider active, in-stock items
+    active_items = [
+        item for item in items
+        if item.get("active") == "1" and item.get("in_stock") == "2"
+    ]
+
     # ── Step 1: Exact item name match (case-insensitive) ──────────────────
     matched_item = None
-    for item in items:
+    for item in active_items:
         name = item.get("itemname", "")
         if name.lower() == item_name.lower():
             matched_item = item
             break
 
+    # ── Step 2: Partial / substring match ─────────────────────────────────
     if matched_item is None:
-        raise ValueError(
-            f"Item '{item_name}' is not available on our menu."
-        )
+        query_lower = item_name.lower()
+        query_words = set(query_lower.split())
+
+        partial_matches = []
+        for item in active_items:
+            menu_name = item.get("itemname", "")
+            menu_lower = menu_name.lower()
+            # Check if ALL words from customer query appear in menu item name
+            if query_words and all(w in menu_lower for w in query_words):
+                partial_matches.append(item)
+
+        if len(partial_matches) == 1:
+            matched_item = partial_matches[0]
+            logger.info(
+                f"Partial match: '{item_name}' -> '{matched_item.get('itemname')}'"
+            )
+        elif len(partial_matches) > 1:
+            suggestions = [m.get("itemname", "") for m in partial_matches]
+            raise ValueError(
+                f"Multiple items match '{item_name}': {', '.join(suggestions)}. "
+                f"Please ask the customer which one they want."
+            )
+        else:
+            raise ValueError(
+                f"Item '{item_name}' is not available on our menu."
+            )
 
     # ── Step 3: Variation matching ─────────────────────────────────────────
     # Menu uses field "variation" (array), each entry has "name" and "price"
@@ -221,11 +258,15 @@ def _variation_grams(var_name: str) -> int:
 
 async def get_item_price_per_gram(item_name: str) -> dict:
     """
-    Calculate the per-gram price for a weight-based menu item.
+    Calculate the per-gram price for a menu item.
 
-    Uses the largest weight-based variation as the reference to ensure
-    the most representative per-gram rate (avoids rounding artifacts in
-    small-pack prices).
+    Strategy:
+      1. If item has weight-based variations (250 Grms, 1 Kg, etc.) →
+         use the largest variation as the reference for per-gram rate.
+      2. If item has NO weight-based variations but has a base price > 0 →
+         treat base price as per-kg price (these are sold by weight with
+         only a per-kg price listed, e.g. Chicken Liver @ ₹240/kg).
+      3. If neither → raise ValueError.
 
     Returns a dict:
     {
@@ -237,15 +278,23 @@ async def get_item_price_per_gram(item_name: str) -> dict:
         ]
     }
 
-    Raises ValueError if item not found or has no weight-based variations.
+    Raises ValueError if item not found or has no weight-based pricing.
     """
+    # Use validate_item for matching (supports partial match)
+    try:
+        item_info = await validate_item(item_name)
+        resolved_name = item_info["item_name"]
+    except ValueError as e:
+        # Pass through the original error (may include partial match suggestions)
+        raise
+
     menu_data = await get_menu()
     items = menu_data.get("items", [])
 
-    # Find the item (case-insensitive)
+    # Find the resolved item in menu
     matched_item = None
     for item in items:
-        if item.get("itemname", "").lower() == item_name.lower():
+        if item.get("itemname", "").lower() == resolved_name.lower():
             matched_item = item
             break
 
@@ -267,23 +316,47 @@ async def get_item_price_per_gram(item_name: str) -> dict:
                 "price_per_gram": price / grams,
             })
 
-    if not weight_variations:
-        raise ValueError(f"Item '{item_name}' has no weight-based variations (only piece/packet variants).")
+    if weight_variations:
+        # Strategy 1: Use largest weight-based variation as reference
+        reference = max(weight_variations, key=lambda v: v["grams"])
+        price_per_gram = reference["price"] / reference["grams"]
 
-    # Select the reference variation: largest grams (most accurate per-gram rate)
-    reference = max(weight_variations, key=lambda v: v["grams"])
+        logger.info(
+            f"[PRICE] '{resolved_name}' — reference: {reference['name']} @ ₹{reference['price']} "
+            f"/ {reference['grams']}g = ₹{price_per_gram:.6f}/g"
+        )
 
-    price_per_gram = reference["price"] / reference["grams"]
+        return {
+            "item_name": resolved_name,
+            "price_per_gram": price_per_gram,
+            "price_per_kg": price_per_gram * 1000,
+            "reference_variation": reference["name"],
+            "variations": weight_variations,
+        }
 
-    logger.info(
-        f"[PRICE] '{item_name}' — reference: {reference['name']} @ ₹{reference['price']} "
-        f"/ {reference['grams']}g = ₹{price_per_gram:.6f}/g"
+    # Strategy 2: No weight variations — use base price as per-kg price
+    base_price = float(matched_item.get("price", 0))
+    if base_price > 0:
+        price_per_gram = base_price / 1000.0
+        logger.info(
+            f"[PRICE] '{resolved_name}' — no weight variations, using base price "
+            f"₹{base_price} as per-kg rate = ₹{price_per_gram:.6f}/g"
+        )
+        return {
+            "item_name": resolved_name,
+            "price_per_gram": price_per_gram,
+            "price_per_kg": base_price,
+            "reference_variation": "1 Kg (base price)",
+            "variations": [{
+                "name": "1 Kg",
+                "price": base_price,
+                "grams": 1000,
+                "price_per_gram": price_per_gram,
+            }],
+        }
+
+    raise ValueError(
+        f"Item '{resolved_name}' has no weight-based pricing "
+        f"(only piece/packet variants)."
     )
-
-    return {
-        "price_per_gram": price_per_gram,
-        "price_per_kg": price_per_gram * 1000,
-        "reference_variation": reference["name"],
-        "variations": weight_variations,
-    }
 
