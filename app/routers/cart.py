@@ -284,6 +284,16 @@ async def add_to_cart(
     try:
         item_info = await validate_item(request.item_name, request.variation)
     except ValueError as e:
+        # ── FALLBACK ──
+        # If LLM passed "700 Grms" as variation but it's not in menu,
+        # extract the weight and retry as custom weight mode automatically.
+        grams = _variation_to_grams(request.variation)
+        if grams > 0:
+            logger.info(f"Fallback: variation '{request.variation}' not found, retrying as custom weight {grams}g")
+            request.custom_weight_kg = grams / 1000.0
+            request.variation = None
+            return await add_to_cart(request, raw_request, db)
+            
         logger.warning(f"Menu validation failed: {e}")
         return CartResponse(success=False, message=str(e), cart_items=[], cart_total=0.0)
     except Exception as e:

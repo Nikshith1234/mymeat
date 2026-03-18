@@ -108,8 +108,11 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             ),
             "method": "POST",
             "url": f"{base}/api/add_to_cart",
+            "speak_during_execution": True,
+            "speak_message": "एक मिनट, मैं सिस्टम में update कर रही हूँ...",
+            "messages": [{"type": "request-start", "content": "एक मिनट, मैं सिस्टम में update कर रही हूँ..."}],
             "parameters": [
-                {"name": "session_id", "type": "string", "description": "A random 6-digit number (e.g. 582910) that you MUST generate internally at the start of the call. Use this EXACT same number for EVERY tool call to track the cart.", "location": "body", "required": True},
+                {"name": "session_id", "type": "string", "description": "The exact assigned 6-digit session code given to you.", "location": "body", "required": True},
                 {"name": "caller_number", "type": "string", "description": "Caller's actual phone number from call metadata (e.g. +919876543210). Pass if available from metadata, otherwise omit.", "location": "body", "required": False},
                 {"name": "item_name", "type": "string", "description": "The EXACT item name as it appears in the MENU — character for character, no translation, no paraphrasing.", "location": "body", "required": True},
                 {"name": "variation", "type": "string", "description": "[MODE A only] Item variation e.g. '250 Grms', '500 Grms', '1 Kg', 'Pcs'. Omit in MODE B (custom_weight_kg) and for items with no variation.", "location": "body", "required": False},
@@ -126,8 +129,11 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             ),
             "method": "POST",
             "url": f"{base}/api/remove_from_cart",
+            "speak_during_execution": True,
+            "speak_message": "एक मिनट, मैं इसे हटा देती हूँ...",
+            "messages": [{"type": "request-start", "content": "एक मिनट, मैं इसे हटा देती हूँ..."}],
             "parameters": [
-                {"name": "session_id", "type": "string", "description": "The exact same random 6-digit number you generated at the start of the call.", "location": "body", "required": True},
+                {"name": "session_id", "type": "string", "description": "The exact assigned 6-digit session code given to you.", "location": "body", "required": True},
                 {"name": "item_name", "type": "string", "description": "Exact name of the menu item to remove.", "location": "body", "required": True},
                 {"name": "quantity", "type": "string", "description": "Weight to remove, e.g. '1 Kg', '500 Grms'. OMIT this to remove the entire item. Pass it only when the customer wants partial removal.", "location": "body", "required": False}
             ]
@@ -137,8 +143,11 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             "description": "Get all items in cart and total price. Call after customer says done ordering.",
             "method": "POST",
             "url": f"{base}/api/calculate_total",
+            "speak_during_execution": True,
+            "speak_message": "ज़रा रुकिए, मैं आपका total check कर रही हूँ...",
+            "messages": [{"type": "request-start", "content": "ज़रा रुकिए, मैं आपका total check कर रही हूँ..."}],
             "parameters": [
-                {"name": "session_id", "type": "string", "description": "The exact same random 6-digit number you generated at the start of the call.", "location": "body", "required": True},
+                {"name": "session_id", "type": "string", "description": "The exact assigned 6-digit session code given to you.", "location": "body", "required": True},
                 {"name": "caller_number", "type": "string", "description": "Caller's actual phone number. Pass if available.", "location": "body", "required": False}
             ]
         },
@@ -153,8 +162,11 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             ),
             "method": "POST",
             "url": f"{base}/api/calculate_total",
+            "speak_during_execution": True,
+            "speak_message": "एक मिनट, मैं आपका cart check करती हूँ...",
+            "messages": [{"type": "request-start", "content": "एक मिनट, मैं आपका cart check करती हूँ..."}],
             "parameters": [
-                {"name": "session_id", "type": "string", "description": "Your 6-digit session code.", "location": "body", "required": True},
+                {"name": "session_id", "type": "string", "description": "The exact assigned 6-digit session code given to you.", "location": "body", "required": True},
                 {"name": "caller_number", "type": "string", "description": "Caller phone if available.", "location": "body", "required": False}
             ]
         },
@@ -163,11 +175,14 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             "description": "Place final confirmed order. Call EXACTLY ONCE — never retry. If it returns success=false, tell the customer and do NOT call again. Call ONLY after all items verified via calculate_total, delivery method confirmed, and customer name collected.",
             "method": "POST",
             "url": f"{base}/api/place_order",
+            "speak_during_execution": True,
+            "speak_message": "बस एक पल, मैं आपका order systems में डाल रही हूँ...",
+            "messages": [{"type": "request-start", "content": "बस एक पल, मैं आपका order systems में डाल रही हूँ..."}],
             "parameters": [
-                {"name": "session_id", "type": "string", "description": "The exact same random 6-digit number you generated at the start of the call.", "location": "body", "required": True},
+                {"name": "session_id", "type": "string", "description": "The exact assigned 6-digit session code given to you.", "location": "body", "required": True},
                 {"name": "caller_number", "type": "string", "description": "Caller's actual phone number from metadata. Pass if available, otherwise omit.", "location": "body", "required": False},
                 {"name": "customer_phone", "type": "string", "description": "Same as caller_number. Optional.", "location": "body", "required": False},
-                {"name": "customer_name", "type": "string", "description": "Customer name collected at start of call in Step 1. MUST be in English Latin script (e.g., 'Nikshit', 'Rahul', 'Priya'). NEVER use Devanagari or any non-Latin script. If the STT transcribed the name in Hindi/Devanagari, transliterate it to English Latin before passing it here.", "location": "body", "required": True},
+                {"name": "customer_name", "type": "string", "description": "Customer name. MUST be collected before calling this tool. If you do not have their name, ask them for it first! MUST be in English Latin script (e.g., 'Nikshit'). NEVER use Devanagari.", "location": "body", "required": True},
                 {"name": "order_type", "type": "string", "description": "Must be exactly DELIVERY or PICKUP.", "location": "body", "required": True},
                 {"name": "address", "type": "string", "description": "Full delivery address. Only when order_type is DELIVERY.", "location": "body", "required": False},
                 {"name": "arrival_time", "type": "string", "description": "Expected pickup time. Only when order_type is PICKUP.", "location": "body", "required": False}
@@ -194,8 +209,11 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             ),
             "method": "POST",
             "url": f"{base}/api/get_item_price",
+            "speak_during_execution": True,
+            "speak_message": "एक मिनट, मैं price check कर रही हूँ...",
+            "messages": [{"type": "request-start", "content": "एक मिनट, मैं price check कर रही हूँ..."}],
             "parameters": [
-                {"name": "session_id", "type": "string", "description": "Your 6-digit session code.", "location": "body", "required": True},
+                {"name": "session_id", "type": "string", "description": "The exact assigned 6-digit session code given to you.", "location": "body", "required": True},
                 {"name": "item_name", "type": "string", "description": "Exact menu item name to look up.", "location": "body", "required": True},
                 {"name": "custom_weight_kg", "type": "number", "description": "Customer's requested weight in kilograms (e.g. 3.3, 0.75, 2.5). Pass this for ANY non-standard weight request. Server computes the total price — you MUST use the returned computed_total_price and NEVER calculate it yourself.", "location": "body", "required": False},
                 {"name": "budget", "type": "number", "description": "Customer's budget in rupees. Pass ONLY for budget-based ordering (e.g. '300 rupees ka de do'). Omit for custom weight queries.", "location": "body", "required": False}
@@ -225,10 +243,14 @@ async def build_rightside_payload(caller_number: str = "") -> Dict[str, Any]:
         logger.error(f"Failed to read prompt file: {e}")
         prompt_template = "You are Riya, a Meatcraft assistant. Help the user order."
 
+    import random
+    session_id = str(random.randint(100000, 999999))
+    
     format_kwargs = {
         "current_date": now.strftime("%Y-%m-%d"),
         # If caller_number provided by webhook, inject it; otherwise keep placeholder intact
         "caller_number": caller_number if caller_number else "{caller_number}",
+        "session_id": session_id,
         "menu_items": menu_summary,
         "current_time": now.strftime("%H:%M"),
         "next_slot": next_slot,
@@ -239,7 +261,6 @@ async def build_rightside_payload(caller_number: str = "") -> Dict[str, Any]:
         "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
         "language": "hi",
         "voice": "faf0731e-dfb9-4cfc-8119-259a79b27e12",
-        "first_message": "Meatcraft में आपका स्वागत है। मैं Riya हूँ, आपका AI assistant। मैं आपका Mutton, Chicken, और Seafood का order place करने में मदद कर सकती हूँ। सबसे पहले, आपका नाम क्या है और आपको क्या order करना है?",
         "stt_config": {
             "provider": "deepgram",
             "config": {
