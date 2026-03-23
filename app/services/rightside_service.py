@@ -65,12 +65,16 @@ async def get_formatted_menu_summary() -> str:
             cat_id = item.get("item_categoryid", "")
             cat_name = cat_map.get(cat_id, "Other")
             name = item.get("itemname", "")
+            pronunciation = item.get("pronunciation_guide", "")
             
             variations = item.get("variation", [])
             if variations:
                 var_names = [v.get("name", "") for v in variations if v.get("name")]
                 if var_names:
                     name = f"{name} (Sizes: {', '.join(var_names)})"
+
+            if pronunciation:
+                name = f"{name} [{pronunciation}]"
 
             if name:
                 groups.setdefault(cat_name, []).append(name)
