@@ -261,6 +261,9 @@ async def build_rightside_payload(caller_number: str = "") -> Dict[str, Any]:
         "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
         "language": "hi",
         "voice": "faf0731e-dfb9-4cfc-8119-259a79b27e12",
+        "llm_config": {
+            "model": "gpt-5-mini"
+        },
         "stt_config": {
             "provider": "deepgram",
             "config": {
