@@ -474,12 +474,23 @@ async def remove_from_cart(
                     remaining_to_remove -= total_item_grams
                     current_items[idx] = None  # Mark for removal
                 else:
-                    # Reduce quantity
-                    units_to_remove = remaining_to_remove // item_grams
-                    if units_to_remove > 0:
-                        item["quantity"] -= units_to_remove
-                        item["final_price"] = item["quantity"] * item["price"]
-                        remaining_to_remove -= units_to_remove * item_grams
+                    # Reduce by exact weight, converting remainder to a custom weight entry
+                    new_total_grams = total_item_grams - remaining_to_remove
+                    price_per_gram = item["final_price"] / total_item_grams
+                    
+                    new_price = round(price_per_gram * new_total_grams, 2)
+                    if new_total_grams >= 1000:
+                        kg_val = new_total_grams / 1000.0
+                        kg_str = f"{kg_val:.3f}".rstrip("0").rstrip(".")
+                        new_variation = f"{kg_str} Kg"
+                    else:
+                        new_variation = f"{int(new_total_grams)} Grms"
+                        
+                    item["quantity"] = 1
+                    item["variation"] = new_variation
+                    item["price"] = new_price
+                    item["final_price"] = new_price
+                    item["is_custom_weight"] = True
                     remaining_to_remove = 0
 
             current_items = [i for i in current_items if i is not None]
