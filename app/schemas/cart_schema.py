@@ -110,3 +110,27 @@ class GetItemPriceResponse(BaseModel):
     custom_weight_kg_to_add: Optional[float] = None  # pass this to add_to_cart
     message: str = ""
 
+
+# ── Menu search schemas ────────────────────────────────────────────────────────
+
+class SearchMenuRequest(BaseModel):
+    """Request to search the menu."""
+    session_id: str = Field(..., description="Unique session ID for the call")
+    caller_number: Optional[str] = Field(None, description="Caller's phone number")
+    query: Optional[str] = Field(None, description="Item name or category to search for (e.g. 'chicken', 'mutton boneless'). If empty, returns categories.")
+
+
+class SearchMenuItemSchema(BaseModel):
+    """Schema for a matched menu item."""
+    name: str
+    category: str
+    description: str
+
+
+class SearchMenuResponse(BaseModel):
+    """Response for search_menu endpoint."""
+    success: bool
+    message: str
+    items: List[SearchMenuItemSchema] = []
+    categories: List[str] = []
+

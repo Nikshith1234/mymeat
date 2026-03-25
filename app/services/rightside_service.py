@@ -44,50 +44,6 @@ def _update_env_value(key: str, value: str) -> None:
     logger.info("Updated .env: %s", new_line)
 
 
-async def get_formatted_menu_summary() -> str:
-    """
-    Compact menu for the system prompt — grouped by category, names only.
-    Prices and stock are validated by the backend on add_to_cart.
-    """
-    try:
-        menu_data = await get_menu()
-        categories = menu_data.get("categories", [])
-        items = menu_data.get("items", [])
-
-        cat_map = {c.get("categoryid"): c.get("categoryname") for c in categories}
-        groups: dict = {}
-
-        for item in items:
-            if item.get("active") != "1":
-                continue
-            if item.get("in_stock") != "2":
-                continue
-            cat_id = item.get("item_categoryid", "")
-            cat_name = cat_map.get(cat_id, "Other")
-            name = item.get("itemname", "")
-            pronunciation = item.get("pronunciation_guide", "")
-            
-            variations = item.get("variation", [])
-            if variations:
-                var_names = [v.get("name", "") for v in variations if v.get("name")]
-                if var_names:
-                    name = f"{name} (Sizes: {', '.join(var_names)})"
-
-            if pronunciation:
-                name = f"{name} [{pronunciation}]"
-
-            if name:
-                groups.setdefault(cat_name, []).append(name)
-
-        return "\n".join(
-            f"{cat}: {', '.join(names)}"
-            for cat, names in groups.items()
-        )
-    except Exception as e:
-        logger.error(f"Failed to format menu: {e}")
-        return "Menu unavailable."
-
-
 def get_tool_definitions() -> List[Dict[str, Any]]:
     """
     Define tools in Rock8 format using the URL from environment settings.
@@ -97,6 +53,26 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
     settings = get_settings()
     base = settings.BASE_URL.rstrip('/')
     return [
+        {
+            "name": "search_menu",
+            "description": (
+                "Search the menu for items or categories. Call this whenever the customer asks "
+                "what is available, asks for a specific category, or before adding an item if you "
+                "are unsure of the exact name/sizes. "
+                "Pass an empty query to get a list of categories. "
+                "Pass a search term like 'chicken', 'mutton', 'liver', or 'masale' to get matching items."
+            ),
+            "method": "POST",
+            "url": f"{base}/api/search_menu",
+            "speak_during_execution": True,
+            "speak_message": "ज़रा रुकिए, मैं menu check कर रही हूँ...",
+            "messages": [{"type": "request-start", "content": "ज़रा रुकिए, मैं menu check कर रही हूँ..."}],
+            "parameters": [
+                {"name": "session_id", "type": "string", "description": "The exact assigned 6-digit session code.", "location": "body", "required": True},
+                {"name": "caller_number", "type": "string", "description": "Caller's actual phone number.", "location": "body", "required": False},
+                {"name": "query", "type": "string", "description": "Item name or category to search for (e.g. 'chicken', 'liver'). Can be omitted or empty to list all categories.", "location": "body", "required": False}
+            ]
+        },
         {
             "name": "add_to_cart",
             "description": (
@@ -237,7 +213,6 @@ async def build_rightside_payload(caller_number: str = "") -> Dict[str, Any]:
     settings = get_settings()
     now = datetime.datetime.now(IST)
     next_slot = (now + datetime.timedelta(minutes=30)).strftime("%H:%M")
-    menu_summary = await get_formatted_menu_summary()
 
     # Read the prompt template from file — SafeDict keeps un-replaced {placeholders} intact
     try:
@@ -255,7 +230,6 @@ async def build_rightside_payload(caller_number: str = "") -> Dict[str, Any]:
         # If caller_number provided by webhook, inject it; otherwise keep placeholder intact
         "caller_number": caller_number if caller_number else "{caller_number}",
         "session_id": session_id,
-        "menu_items": menu_summary,
         "current_time": now.strftime("%H:%M"),
         "next_slot": next_slot,
     }
