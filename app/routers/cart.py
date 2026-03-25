@@ -29,8 +29,11 @@ from app.schemas.cart_schema import (
     GetItemPriceRequest,
     GetItemPriceResponse,
     VariationPriceInfo,
+    SearchMenuRequest,
+    SearchMenuResponse,
+    SearchMenuItemSchema,
 )
-from app.services.menu_service import validate_item, get_item_price_per_gram
+from app.services.menu_service import validate_item, get_item_price_per_gram, get_menu
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -655,4 +658,90 @@ async def get_item_price(request: GetItemPriceRequest):
             f"Price per kg: ₹{price_per_kg:.2f}."
         ),
     )
+
+
+@router.post("/search_menu", response_model=SearchMenuResponse)
+async def search_menu(request: SearchMenuRequest, raw_request: Request):
+    """
+    Search the menu for items or list categories.
+    """
+    session_key = _resolve_session(raw_request, request.caller_number, request.session_id)
+    
+    print(f"\n==============================================")
+    print(f"📞 Riya CALLED: SEARCH MENU")
+    print(f"📞 QUERY: {request.query}")
+    print(f"==============================================\n")
+
+    try:
+        menu_data = await get_menu()
+    except Exception as e:
+        logger.error(f"Failed to fetch menu during search: {e}")
+        return SearchMenuResponse(success=False, message="Menu currently unavailable")
+
+    categories = menu_data.get("categories", [])
+    cat_map = {c.get("categoryid"): c.get("categoryname") for c in categories}
+    
+    all_items = menu_data.get("items", [])
+    active_items = [i for i in all_items if i.get("active") == "1" and i.get("in_stock") == "2"]
+
+    if not request.query:
+        # Just return categories
+        cat_names = sorted(list(set(cat_map.values())))
+        # Filter out empty or None
+        cat_names = [c for c in cat_names if c]
+        return SearchMenuResponse(
+            success=True,
+            message=f"Categories available: {', '.join(cat_names)}. You can now ask what the customer wants from these categories.",
+            categories=cat_names
+        )
+
+    query_lower = request.query.lower()
+    query_words = set(query_lower.split())
+    
+    matched_items = []
+    for item in active_items:
+        name = item.get("itemname", "")
+        # Also match by category name
+        cat_name = cat_map.get(item.get("item_categoryid", ""), "Other")
+        
+        search_text = f"{name} {cat_name}".lower()
+        if all(w in search_text for w in query_words):
+            # Formulate description
+            variations = item.get("variation", [])
+            price_desc = []
+            if variations:
+                for v in variations:
+                    vname = v.get("name", "")
+                    vprice = v.get("price", 0)
+                    price_desc.append(f"{vname} (₹{vprice})")
+                price_str = ", ".join(price_desc)
+            else:
+                price_str = f"₹{item.get('price', 0)}"
+                
+            pronunciation = item.get("pronunciation_guide", "")
+            desc = price_str
+            if pronunciation:
+                desc += f" [pronounce as: {pronunciation}]"
+                
+            matched_items.append(
+                SearchMenuItemSchema(
+                    name=name,
+                    category=cat_name,
+                    description=desc
+                )
+            )
+
+    if not matched_items:
+        return SearchMenuResponse(
+            success=False,
+            message=f"No matching items found for '{request.query}'. Please try a different name."
+        )
+
+    # Return up to top 15 matches to prevent huge payload
+    return SearchMenuResponse(
+        success=True,
+        message=f"Found {len(matched_items)} matches for '{request.query}'. Please ask the customer to confirm one of the specific matching item names.",
+        items=matched_items[:15]
+    )
+
 
