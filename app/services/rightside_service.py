@@ -245,7 +245,7 @@ async def build_rightside_payload(caller_number: str = "") -> Dict[str, Any]:
             prompt_template = f.read()
     except Exception as e:
         logger.error(f"Failed to read prompt file: {e}")
-        prompt_template = "You are Riya, a Meatcraft assistant. Help the user order."
+        prompt_template = "You are रिया, a मीटक्राफ्ट assistant. Help the user order."
 
     import random
     session_id = str(random.randint(100000, 999999))
