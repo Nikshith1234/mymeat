@@ -156,3 +156,5 @@ cython_debug/
 *.db
 frontend/node_modules/
 payload_dump.json
+prompt.txt
+menu.txt
