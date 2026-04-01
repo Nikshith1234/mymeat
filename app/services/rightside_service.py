@@ -253,16 +253,23 @@ async def build_rightside_payload(caller_number: str = "") -> Dict[str, Any]:
         "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
         "language": "hi",
         "voice": "faf0731e-dfb9-4cfc-8119-259a79b27e12",
-        "llm_config": {
-            "provider": "openai",
-            "model": "gpt-5-mini",
-            "model_type": "standard"
-        },
-        "stt_config": {
-            "provider": "deepgram",
+        # "llm_config": {
+        #     "provider": "gemini_live",
+        #     "model": "gemini-3.1-pro-preview",
+        #     "model_type": "standard"
+        # },
+        # "stt_config": {
+        #     "provider": "deepgram",
+        #     "config": {
+        #         "model": "nova-3",
+        #         "language": "hi"
+        #     }
+        # },
+        "model_type": "realtime",
+        "realtime_config": {
+            "provider": "gemini_live",
             "config": {
-                "model": "nova-3",
-                "language": "hi"
+                "model": "gemini-3.1-pro-preview"
             }
         },
         "vad_config": {
