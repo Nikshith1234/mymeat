@@ -252,7 +252,7 @@ async def build_rightside_payload(caller_number: str = "") -> Dict[str, Any]:
     return {
         "phone_number": settings.RIGHTSIDE_PHONE_NUMBER,
         "language": "hi",
-        "voice": "faf0731e-dfb9-4cfc-8119-259a79b27e12",
+        # "voice": "faf0731e-dfb9-4cfc-8119-259a79b27e12",
         # "llm_config": {
         #     "provider": "gemini_live",
         #     "model": "gemini-3.1-pro-preview",
@@ -269,7 +269,8 @@ async def build_rightside_payload(caller_number: str = "") -> Dict[str, Any]:
         "realtime_config": {
             "provider": "gemini_live",
             "config": {
-                "model": "gemini-3.1-pro-preview"
+                "model": "gemini-3.1-pro-preview",
+                "voice": "faf0731e-dfb9-4cfc-8119-259a79b27e12"
             }
         },
         "vad_config": {
