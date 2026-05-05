@@ -280,7 +280,7 @@ async def build_rightside_payload(caller_number: str = "") -> Dict[str, Any]:
         "tts_config": {
             "provider": "sarvam",
             "config": {
-                "target_language_code": "en-IN",
+                "target_language_code": "hi-IN",
                 "model": "bulbul:v2",
                 "speaker": "karun",
                 "pace": 1.2
