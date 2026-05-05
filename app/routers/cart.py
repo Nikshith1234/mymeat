@@ -14,6 +14,8 @@ import re
 import math
 import logging
 from typing import Optional
+import asyncio
+from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -38,6 +40,8 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Cart"])
+
+session_locks = defaultdict(asyncio.Lock)
 
 
 def _normalize_phone(raw: str) -> str:
@@ -238,42 +242,43 @@ async def add_to_cart(
             grams_int = int(round(weight_grams))
             variation_label = f"{grams_int} Grms"
 
-        cart = await _get_or_create_cart(db, session_key)
-        current_items = list(cart.get("items", []))
+        async with session_locks[session_key]:
+            cart = await _get_or_create_cart(db, session_key)
+            current_items = list(cart.get("items", []))
 
-        # Check for duplicate custom-weight entry for same item
-        found = False
-        for existing_item in current_items:
-            if (
-                existing_item.get("item_name", "").lower() == resolved_name.lower()
-                and existing_item.get("variation") == variation_label
-            ):
-                # Accumulate: double the weight and double the price
-                existing_item["quantity"] += 1
-                existing_item["final_price"] = round(existing_item["price"] * existing_item["quantity"], 2)
-                found = True
-                break
+            # Check for duplicate custom-weight entry for same item
+            found = False
+            for existing_item in current_items:
+                if (
+                    existing_item.get("item_name", "").lower() == resolved_name.lower()
+                    and existing_item.get("variation") == variation_label
+                ):
+                    # Accumulate: double the weight and double the price
+                    existing_item["quantity"] += 1
+                    existing_item["final_price"] = round(existing_item["price"] * existing_item["quantity"], 2)
+                    found = True
+                    break
 
-        if not found:
-            new_item = {
-                "item_name": resolved_name,
-                "variation": variation_label,
-                "quantity": 1,
-                "price": exact_price,
-                "final_price": exact_price,
-                "is_custom_weight": True,
-            }
-            current_items.append(new_item)
-            logger.info(f"[CART CUSTOM] Added '{resolved_name}' @ {variation_label} for ₹{exact_price}")
+            if not found:
+                new_item = {
+                    "item_name": resolved_name,
+                    "variation": variation_label,
+                    "quantity": 1,
+                    "price": exact_price,
+                    "final_price": exact_price,
+                    "is_custom_weight": True,
+                }
+                current_items.append(new_item)
+                logger.info(f"[CART CUSTOM] Added '{resolved_name}' @ {variation_label} for ₹{exact_price}")
 
-        cart["items"] = current_items
-        cart["total_amount"] = _recalculate_total(current_items)
-        cart["updated_at"] = datetime.utcnow()
+            cart["items"] = current_items
+            cart["total_amount"] = _recalculate_total(current_items)
+            cart["updated_at"] = datetime.utcnow()
 
-        await db["carts"].update_one(
-            {"session_id": session_key},
-            {"$set": {"items": cart["items"], "total_amount": cart["total_amount"], "updated_at": cart["updated_at"]}}
-        )
+            await db["carts"].update_one(
+                {"session_id": session_key},
+                {"$set": {"items": cart["items"], "total_amount": cart["total_amount"], "updated_at": cart["updated_at"]}}
+            )
 
         consolidated = _consolidate_cart_items(current_items)
         return CartResponse(
@@ -303,41 +308,42 @@ async def add_to_cart(
         logger.error(f"Menu service error: {e}")
         raise HTTPException(status_code=503, detail="Menu service unavailable")
 
-    cart = await _get_or_create_cart(db, session_key)
-    current_items = list(cart.get("items", []))
+    async with session_locks[session_key]:
+        cart = await _get_or_create_cart(db, session_key)
+        current_items = list(cart.get("items", []))
 
-    # Check for duplicate item+variation — increment quantity if found
-    found = False
-    for existing_item in current_items:
-        if (
-            existing_item.get("item_name", "").lower() == item_info["item_name"].lower()
-            and existing_item.get("variation") == item_info["variation"]
-        ):
-            existing_item["quantity"] += request.quantity
-            existing_item["final_price"] = existing_item["quantity"] * existing_item["price"]
-            found = True
-            logger.info(f"Incremented '{item_info['item_name']}' to qty={existing_item['quantity']}")
-            break
+        # Check for duplicate item+variation — increment quantity if found
+        found = False
+        for existing_item in current_items:
+            if (
+                existing_item.get("item_name", "").lower() == item_info["item_name"].lower()
+                and existing_item.get("variation") == item_info["variation"]
+            ):
+                existing_item["quantity"] += request.quantity
+                existing_item["final_price"] = existing_item["quantity"] * existing_item["price"]
+                found = True
+                logger.info(f"Incremented '{item_info['item_name']}' to qty={existing_item['quantity']}")
+                break
 
-    if not found:
-        new_item = {
-            "item_name": item_info["item_name"],
-            "variation": item_info["variation"],
-            "quantity": request.quantity,
-            "price": item_info["price"],
-            "final_price": item_info["price"] * request.quantity,
-        }
-        current_items.append(new_item)
-        logger.info(f"Added new item '{item_info['item_name']}' to cart")
+        if not found:
+            new_item = {
+                "item_name": item_info["item_name"],
+                "variation": item_info["variation"],
+                "quantity": request.quantity,
+                "price": item_info["price"],
+                "final_price": item_info["price"] * request.quantity,
+            }
+            current_items.append(new_item)
+            logger.info(f"Added new item '{item_info['item_name']}' to cart")
 
-    cart["items"] = current_items
-    cart["total_amount"] = _recalculate_total(current_items)
-    cart["updated_at"] = datetime.utcnow()
-    
-    await db["carts"].update_one(
-        {"session_id": session_key},
-        {"$set": {"items": cart["items"], "total_amount": cart["total_amount"], "updated_at": cart["updated_at"]}}
-    )
+        cart["items"] = current_items
+        cart["total_amount"] = _recalculate_total(current_items)
+        cart["updated_at"] = datetime.utcnow()
+        
+        await db["carts"].update_one(
+            {"session_id": session_key},
+            {"$set": {"items": cart["items"], "total_amount": cart["total_amount"], "updated_at": cart["updated_at"]}}
+        )
 
     consolidated = _consolidate_cart_items(current_items)
     return CartResponse(
@@ -403,110 +409,111 @@ async def remove_from_cart(
 
     logger.info(f"[CART] remove_from_cart: key={session_key}, item={request.item_name}, qty={request.quantity}")
 
-    cart = await db["carts"].find_one({"session_id": session_key})
+    async with session_locks[session_key]:
+        cart = await db["carts"].find_one({"session_id": session_key})
 
-    if cart is None or not cart.get("items"):
-        return CartResponse(
-            success=False,
-            message="Cart is empty, nothing to remove",
-            cart_items=[],
-            cart_total=0.0,
-        )
-
-    current_items = list(cart["items"])
-
-    # Find all entries for this item
-    matching_indices = [
-        i for i, item in enumerate(current_items)
-        if item.get("item_name", "").lower() == request.item_name.lower()
-    ]
-
-    if not matching_indices:
-        return CartResponse(
-            success=False,
-            message=f"Item '{request.item_name}' not found in cart",
-            cart_items=_consolidate_cart_items(current_items),
-            cart_total=cart.get("total_amount", 0.0),
-        )
-
-    # If no quantity specified → remove ALL entries of this item
-    if not request.quantity:
-        current_items = [item for i, item in enumerate(current_items) if i not in matching_indices]
-        msg = f"'{request.item_name}' completely removed from cart"
-    else:
-        # Partial removal — remove the specified weight
-        grams_to_remove = _variation_to_grams(request.quantity)
-
-        if grams_to_remove <= 0:
-            # Non-weight quantity (e.g., packet count for masale)
-            try:
-                qty_to_remove = int(re.sub(r'[^0-9]', '', request.quantity) or '1')
-            except ValueError:
-                qty_to_remove = 1
-            for idx in matching_indices:
-                item = current_items[idx]
-                if item["quantity"] > qty_to_remove:
-                    item["quantity"] -= qty_to_remove
-                    item["final_price"] = item["quantity"] * item["price"]
-                    break
-                else:
-                    current_items[idx] = None  # Mark for removal
-                    break
-            current_items = [i for i in current_items if i is not None]
-            msg = f"{request.quantity} of '{request.item_name}' removed from cart"
-        else:
-            # Weight-based partial removal
-            remaining_to_remove = grams_to_remove
-            # Process entries from smallest variation to largest (remove small packs first)
-            sorted_indices = sorted(
-                matching_indices,
-                key=lambda idx: _variation_to_grams(current_items[idx].get("variation", ""))
+        if cart is None or not cart.get("items"):
+            return CartResponse(
+                success=False,
+                message="Cart is empty, nothing to remove",
+                cart_items=[],
+                cart_total=0.0,
             )
 
-            for idx in sorted_indices:
-                if remaining_to_remove <= 0:
-                    break
-                item = current_items[idx]
-                item_grams = _variation_to_grams(item.get("variation", ""))
-                if item_grams <= 0:
-                    continue
-                total_item_grams = item_grams * item["quantity"]
+        current_items = list(cart["items"])
 
-                if total_item_grams <= remaining_to_remove:
-                    # Remove this entire entry
-                    remaining_to_remove -= total_item_grams
-                    current_items[idx] = None  # Mark for removal
-                else:
-                    # Reduce by exact weight, converting remainder to a custom weight entry
-                    new_total_grams = total_item_grams - remaining_to_remove
-                    price_per_gram = item["final_price"] / total_item_grams
-                    
-                    new_price = round(price_per_gram * new_total_grams, 2)
-                    if new_total_grams >= 1000:
-                        kg_val = new_total_grams / 1000.0
-                        kg_str = f"{kg_val:.3f}".rstrip("0").rstrip(".")
-                        new_variation = f"{kg_str} Kg"
+        # Find all entries for this item
+        matching_indices = [
+            i for i, item in enumerate(current_items)
+            if item.get("item_name", "").lower() == request.item_name.lower()
+        ]
+
+        if not matching_indices:
+            return CartResponse(
+                success=False,
+                message=f"Item '{request.item_name}' not found in cart",
+                cart_items=_consolidate_cart_items(current_items),
+                cart_total=cart.get("total_amount", 0.0),
+            )
+
+        # If no quantity specified → remove ALL entries of this item
+        if not request.quantity:
+            current_items = [item for i, item in enumerate(current_items) if i not in matching_indices]
+            msg = f"'{request.item_name}' completely removed from cart"
+        else:
+            # Partial removal — remove the specified weight
+            grams_to_remove = _variation_to_grams(request.quantity)
+
+            if grams_to_remove <= 0:
+                # Non-weight quantity (e.g., packet count for masale)
+                try:
+                    qty_to_remove = int(re.sub(r'[^0-9]', '', request.quantity) or '1')
+                except ValueError:
+                    qty_to_remove = 1
+                for idx in matching_indices:
+                    item = current_items[idx]
+                    if item["quantity"] > qty_to_remove:
+                        item["quantity"] -= qty_to_remove
+                        item["final_price"] = item["quantity"] * item["price"]
+                        break
                     else:
-                        new_variation = f"{int(new_total_grams)} Grms"
+                        current_items[idx] = None  # Mark for removal
+                        break
+                current_items = [i for i in current_items if i is not None]
+                msg = f"{request.quantity} of '{request.item_name}' removed from cart"
+            else:
+                # Weight-based partial removal
+                remaining_to_remove = grams_to_remove
+                # Process entries from smallest variation to largest (remove small packs first)
+                sorted_indices = sorted(
+                    matching_indices,
+                    key=lambda idx: _variation_to_grams(current_items[idx].get("variation", ""))
+                )
+
+                for idx in sorted_indices:
+                    if remaining_to_remove <= 0:
+                        break
+                    item = current_items[idx]
+                    item_grams = _variation_to_grams(item.get("variation", ""))
+                    if item_grams <= 0:
+                        continue
+                    total_item_grams = item_grams * item["quantity"]
+
+                    if total_item_grams <= remaining_to_remove:
+                        # Remove this entire entry
+                        remaining_to_remove -= total_item_grams
+                        current_items[idx] = None  # Mark for removal
+                    else:
+                        # Reduce by exact weight, converting remainder to a custom weight entry
+                        new_total_grams = total_item_grams - remaining_to_remove
+                        price_per_gram = item["final_price"] / total_item_grams
                         
-                    item["quantity"] = 1
-                    item["variation"] = new_variation
-                    item["price"] = new_price
-                    item["final_price"] = new_price
-                    item["is_custom_weight"] = True
-                    remaining_to_remove = 0
+                        new_price = round(price_per_gram * new_total_grams, 2)
+                        if new_total_grams >= 1000:
+                            kg_val = new_total_grams / 1000.0
+                            kg_str = f"{kg_val:.3f}".rstrip("0").rstrip(".")
+                            new_variation = f"{kg_str} Kg"
+                        else:
+                            new_variation = f"{int(new_total_grams)} Grms"
+                            
+                        item["quantity"] = 1
+                        item["variation"] = new_variation
+                        item["price"] = new_price
+                        item["final_price"] = new_price
+                        item["is_custom_weight"] = True
+                        remaining_to_remove = 0
 
-            current_items = [i for i in current_items if i is not None]
-            msg = f"{request.quantity} of '{request.item_name}' removed from cart"
+                current_items = [i for i in current_items if i is not None]
+                msg = f"{request.quantity} of '{request.item_name}' removed from cart"
 
-    cart["items"] = current_items
-    cart["total_amount"] = _recalculate_total(current_items)
-    cart["updated_at"] = datetime.utcnow()
+        cart["items"] = current_items
+        cart["total_amount"] = _recalculate_total(current_items)
+        cart["updated_at"] = datetime.utcnow()
 
-    await db["carts"].update_one(
-        {"session_id": session_key},
-        {"$set": {"items": cart["items"], "total_amount": cart["total_amount"], "updated_at": cart["updated_at"]}}
-    )
+        await db["carts"].update_one(
+            {"session_id": session_key},
+            {"$set": {"items": cart["items"], "total_amount": cart["total_amount"], "updated_at": cart["updated_at"]}}
+        )
 
     consolidated = _consolidate_cart_items(current_items)
     return CartResponse(
